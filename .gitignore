@@ -23,3 +23,4 @@ user_data/
 # Temporary files
 *.tmp
 *.part
+data/

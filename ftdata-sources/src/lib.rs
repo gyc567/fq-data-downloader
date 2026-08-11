@@ -115,9 +115,9 @@ pub mod binance {
 
                     let url = format!(
                         "https://data.binance.vision/data/spot/monthly/klines/{}/{}/{}-{}-{}-{:02}.zip",
-                        symbol.freqtrade_format(),
+                        symbol.binance_format(),
                         timeframe.label,
-                        symbol.freqtrade_format(),
+                        symbol.binance_format(),
                         timeframe.label,
                         year,
                         month

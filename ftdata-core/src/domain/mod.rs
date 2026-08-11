@@ -327,6 +327,11 @@ impl Symbol {
     pub fn freqtrade_format(&self) -> String {
         format!("{}_{}", self.base, self.quote)
     }
+
+    /// Returns Binance Vision format (no underscore): BTCUSDT
+    pub fn binance_format(&self) -> String {
+        format!("{}{}", self.base, self.quote)
+    }
 }
 
 impl fmt::Display for Symbol {

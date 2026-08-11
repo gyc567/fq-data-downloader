@@ -4,8 +4,13 @@ use crate::Cli;
 use ftdata_core::domain::*;
 use ftdata_core::planner::{ChunkDecomposer, DownloadPlan, OverallPlan, SourceResolver, ChunkPlan, ChunkStatus};
 use ftdata_analysis::gaps::{self, GapReport};
+use ftdata_http::client::HttpClient;
+use ftdata_http::rate_limit::TokenBucketLimiter;
+use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
+use zip::ZipArchive;
 
 /// Download historical data
 pub async fn download(cli: Cli) -> anyhow::Result<()> {
@@ -49,67 +54,139 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
         .filter_map(|p| Symbol::parse(p).ok())
         .collect();
 
-    // Create overall plan
-    let mut overall_plan = OverallPlan::new();
+    // Create HTTP client with rate limiting
+    let rate_limiter = TokenBucketLimiter::new(10.0, 4); // 10 req/s, 4 concurrent
+    let http_client = HttpClient::new(rate_limiter);
 
+    // Create output directory
+    let output_dir = cli.output.join(exchange.to_string());
+    std::fs::create_dir_all(&output_dir)?;
+
+    let format = DataFormat::from_str(&format_str).unwrap_or(DataFormat::Feather);
+
+    // Download for each symbol and timeframe
     for symbol in &symbols {
         for timeframe in &timeframes {
-            let source_resolver = SourceResolver::new(exchange);
-            let source = source_resolver.resolve_source(true);
-            let tf = timeframe.clone();
+            println!("\n--- Downloading {} {} ---", symbol, timeframe);
 
-            let mut plan = DownloadPlan::new(
-                exchange,
-                symbol.clone(),
-                tf.clone(),
-                MarketType::Spot,
-                CandleType::OHLCV,
-                time_range,
-                source,
-            );
+            // Get bulk URLs from exchange adapter
+            let source = ftdata_sources::ExchangeAdapterFactory::create(exchange);
+            let urls = source.get_bulk_urls(symbol, timeframe, &time_range).await?;
 
-            // Get bulk URLs if available
-            if source == DownloadSource::Bulk {
-                let decomposer = ChunkDecomposer::new(exchange, tf.clone());
-                let chunks = decomposer.decompose_monthly(time_range);
-
-                for chunk in chunks {
-                    plan.chunks.push(ChunkPlan {
-                        start: chunk.start,
-                        end: chunk.end,
-                        status: ChunkStatus::Pending,
-                        estimated_size: decomposer.estimate_chunk_size(&chunk),
-                        url: None,
-                        etag: None,
-                    });
-                }
+            if urls.is_empty() {
+                println!("No bulk URLs available, skipping...");
+                continue;
             }
 
-            plan.estimated_size_bytes = plan
-                .chunks
-                .iter()
-                .map(|c| c.estimated_size)
-                .sum();
+            let total_chunks = urls.len();
+            println!("Downloading {} chunks...", total_chunks);
 
-            overall_plan.add_plan(plan);
+            // Download each chunk
+            for (idx, download_url) in urls.iter().enumerate() {
+                println!("\n[{}/{}] Downloading {}...", idx + 1, total_chunks, download_url.url.split('/').last().unwrap_or("file"));
+
+                // Download zip file
+                let zip_data = match http_client.download_file(&download_url.url).await {
+                    Ok(data) => data,
+                    Err(e) => {
+                        println!("  Failed to download: {:?}", e);
+                        continue;
+                    }
+                };
+
+                // Extract and parse CSV
+                match extract_and_parse_csv(&zip_data, &download_url.time_range).await {
+                    Ok(ohlcv_data) => {
+                        println!("  Downloaded {} candles", ohlcv_data.len());
+
+                        // Write to file
+                        let filename = format!("{}-{}.{}",
+                            symbol.freqtrade_format(),
+                            timeframe.label,
+                            format.extension()
+                        );
+                        let filepath = output_dir.join(&filename);
+
+                        match format {
+                            DataFormat::Feather => {
+                                if let Err(e) = ftdata_storage::feather::write_feather(&filepath, &ohlcv_data) {
+                                    println!("  Failed to write feather: {}", e);
+                                } else {
+                                    println!("  Saved to {}", filepath.display());
+                                }
+                            }
+                            DataFormat::Parquet => {
+                                if let Err(e) = ftdata_storage::parquet::write_parquet(&filepath, &ohlcv_data) {
+                                    println!("  Failed to write parquet: {}", e);
+                                } else {
+                                    println!("  Saved to {}", filepath.display());
+                                }
+                            }
+                            _ => {
+                                println!("  Format not yet supported for bulk download");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("  Failed to parse: {}", e);
+                    }
+                }
+            }
         }
     }
 
-    println!("\n--- Download Plan ---");
-    println!("Total chunks: {}", overall_plan.total_chunks);
-    println!("Pending chunks: {}", overall_plan.total_pending_chunks);
-    println!(
-        "Estimated size: {:.2} GB",
-        overall_plan.estimated_total_bytes as f64 / 1_073_741_824.0
-    );
-
-    println!("\n[MCP Output]");
-    println!("{}", serde_json::to_string_pretty(&overall_plan.to_json())?);
-
-    println!("\nNote: Download implementation is scaffolded.");
-    println!("Run with --verbose for more details.");
-
+    println!("\n=== Download Complete ===");
     Ok(())
+}
+
+/// Extract ZIP and parse Binance CSV format
+async fn extract_and_parse_csv(zip_data: &[u8], time_range: &TimeRange) -> anyhow::Result<Vec<OHLCV>> {
+    use std::io::Cursor;
+
+    let cursor = Cursor::new(zip_data);
+    let mut archive = ZipArchive::new(cursor)?;
+
+    if archive.len() == 0 {
+        return Ok(vec![]);
+    }
+
+    let mut ohlcv_data = vec![];
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+
+        // Parse CSV lines (skip header)
+        for line in contents.lines().skip(1) {
+            let fields: Vec<&str> = line.split(',').collect();
+            if fields.len() >= 6 {
+                let open_time: i64 = fields[0].parse().unwrap_or(0);
+                let open: f64 = fields[1].parse().unwrap_or(0.0);
+                let high: f64 = fields[2].parse().unwrap_or(0.0);
+                let low: f64 = fields[3].parse().unwrap_or(0.0);
+                let close: f64 = fields[4].parse().unwrap_or(0.0);
+                let volume: f64 = fields[5].parse().unwrap_or(0.0);
+
+                // Filter by time range
+                if open_time >= time_range.start && open_time < time_range.end {
+                    ohlcv_data.push(OHLCV {
+                        timestamp: open_time,
+                        open,
+                        high,
+                        low,
+                        close,
+                        volume,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by timestamp
+    ohlcv_data.sort_by_key(|k| k.timestamp);
+
+    Ok(ohlcv_data)
 }
 
 /// Update to latest (incremental)

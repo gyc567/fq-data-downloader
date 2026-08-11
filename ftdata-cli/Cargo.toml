@@ -24,3 +24,4 @@ ftdata-http = { path = "../ftdata-http" }
 ftdata-sources = { path = "../ftdata-sources" }
 ftdata-storage = { path = "../ftdata-storage" }
 ftdata-analysis = { path = "../ftdata-analysis" }
+zip = "2.2"
