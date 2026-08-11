@@ -1,0 +1,25 @@
+[package]
+name = "ftdata-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+reqwest.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+blake3.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+url.workspace = true
+once_cell.workspace = true
+parking_lot.workspace = true
+futures.workspace = true
+csv = "1.3"
+zip = "2.2"
+
+ftdata-http = { path = "../ftdata-http" }

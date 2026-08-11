@@ -1,0 +1,20 @@
+[package]
+name = "ftdata-storage"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+blake3.workspace = true
+tracing.workspace = true
+polars.workspace = true
+directories.workspace = true
+futures.workspace = true
+
+ftdata-core = { path = "../ftdata-core" }

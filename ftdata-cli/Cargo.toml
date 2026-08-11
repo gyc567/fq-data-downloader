@@ -1,0 +1,26 @@
+[package]
+name = "ftdata-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "ftdata"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+indicatif.workspace = true
+directories.workspace = true
+
+ftdata-core = { path = "../ftdata-core" }
+ftdata-http = { path = "../ftdata-http" }
+ftdata-sources = { path = "../ftdata-sources" }
+ftdata-storage = { path = "../ftdata-storage" }
+ftdata-analysis = { path = "../ftdata-analysis" }
