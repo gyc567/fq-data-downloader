@@ -25,3 +25,4 @@ ftdata-sources = { path = "../ftdata-sources" }
 ftdata-storage = { path = "../ftdata-storage" }
 ftdata-analysis = { path = "../ftdata-analysis" }
 zip = "2.2"
+flate2 = "1.0"

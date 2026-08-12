@@ -272,20 +272,30 @@ pub mod bybit {
                     let dt = chrono::Utc.timestamp_millis_opt(current).unwrap();
                     let year = dt.year();
                     let month = dt.month();
-                    let day = dt.day();
 
+                    // Bybit archive URL format (monthly klines)
+                    // https://raw.githubusercontent.com/bybit-exchange/bybit-archive/main/spot/monthly/klines/{symbol}/{timeframe}/{symbol}-{timeframe}-{year}-{month}.zip
                     let url = format!(
-                        "https://raw.githubusercontent.com/bybit-exchange/bybit-archive/main/spot/1m/{}/{}-{}-{}-{}-{:02}.zip",
-                        symbol.freqtrade_format(),
-                        symbol.freqtrade_format(),
+                        "https://raw.githubusercontent.com/bybit-exchange/bybit-archive/main/spot/monthly/klines/{}/{}/{}-{}-{}-{:02}.zip",
+                        symbol.binance_format(),
+                        timeframe.label,
+                        symbol.binance_format(),
                         timeframe.label,
                         year,
-                        month,
-                        day
+                        month
                     );
 
-                    let next_day_start = current + 86_400_000;
-                    let chunk_end = time_range.end.min(next_day_start);
+                    // Calculate end of this month
+                    let (next_year, next_month) = if month == 12 {
+                        (year + 1, 1)
+                    } else {
+                        (year, month + 1)
+                    };
+                    let next_month_start = chrono::Utc
+                        .with_ymd_and_hms(next_year, next_month, 1, 0, 0, 0)
+                        .unwrap()
+                        .timestamp_millis();
+                    let chunk_end = time_range.end.min(next_month_start);
 
                     urls.push(DownloadUrl {
                         url,

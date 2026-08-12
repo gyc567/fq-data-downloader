@@ -57,6 +57,7 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
     // Create HTTP client with rate limiting
     let rate_limiter = TokenBucketLimiter::new(10.0, 4); // 10 req/s, 4 concurrent
     let http_client = HttpClient::new(rate_limiter);
+    let http_client = Arc::new(http_client); // Wrap in Arc for parallel downloads
 
     // Create output directory
     let output_dir = cli.output.join(exchange.to_string());
@@ -74,117 +75,409 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
             let urls = source.get_bulk_urls(symbol, timeframe, &time_range).await?;
 
             if urls.is_empty() {
-                println!("No bulk URLs available, skipping...");
+                // Fall back to REST API if no bulk URLs available
+                println!("No bulk URLs available, falling back to REST API...");
+                download_via_api(&http_client, exchange, symbol, timeframe, &time_range, &output_dir, format).await?;
                 continue;
             }
 
             let total_chunks = urls.len();
-            println!("Downloading {} chunks...", total_chunks);
+            println!("Downloading {} chunks in parallel (max 4 concurrent)...", total_chunks);
 
-            // Download each chunk
-            for (idx, download_url) in urls.iter().enumerate() {
-                println!("\n[{}/{}] Downloading {}...", idx + 1, total_chunks, download_url.url.split('/').last().unwrap_or("file"));
+            // Download chunks in parallel with semaphore-controlled concurrency
+            use tokio::sync::Semaphore;
+            let semaphore = Arc::new(Semaphore::new(4));
+            let symbol_clone = symbol.clone();
+            let timeframe_clone = timeframe.clone();
+            let output_dir_clone = output_dir.clone();
+            let format_clone = format;
 
-                // Download zip file
-                let zip_data = match http_client.download_file(&download_url.url).await {
-                    Ok(data) => data,
-                    Err(e) => {
-                        println!("  Failed to download: {:?}", e);
-                        continue;
-                    }
-                };
+            let handles: Vec<_> = urls.iter().enumerate().map(|(idx, download_url)| {
+                let http_client = http_client.clone();
+                let semaphore = semaphore.clone();
+                let symbol = symbol_clone.clone();
+                let timeframe = timeframe_clone.clone();
+                let output_dir = output_dir_clone.clone();
+                let format = format_clone;
+                let total_chunks = total_chunks;
+                let url_info = download_url.clone();
 
-                // Extract and parse CSV
-                match extract_and_parse_csv(&zip_data, &download_url.time_range).await {
-                    Ok(ohlcv_data) => {
-                        println!("  Downloaded {} candles", ohlcv_data.len());
+                tokio::spawn(async move {
+                    let _permit = semaphore.acquire().await;
 
-                        // Write to file
-                        let filename = format!("{}-{}.{}",
-                            symbol.freqtrade_format(),
-                            timeframe.label,
-                            format.extension()
-                        );
-                        let filepath = output_dir.join(&filename);
+                    let filename = url_info.url.split('/').last().unwrap_or("file");
+                    println!("\n[{}/{}] Downloading {}...", idx + 1, total_chunks, filename);
 
-                        match format {
-                            DataFormat::Feather => {
-                                if let Err(e) = ftdata_storage::feather::write_feather(&filepath, &ohlcv_data) {
-                                    println!("  Failed to write feather: {}", e);
-                                } else {
-                                    println!("  Saved to {}", filepath.display());
+                    // Download zip file
+                    let zip_data = match http_client.download_file(&url_info.url).await {
+                        Ok(data) => data,
+                        Err(e) => {
+                            println!("  Failed to download: {:?}", e);
+                            return (idx, 0, "download_failed".to_string());
+                        }
+                    };
+
+                    // Extract and parse CSV
+                    match extract_and_parse_csv(&zip_data, &url_info.time_range).await {
+                        Ok(ohlcv_data) => {
+                            let count = ohlcv_data.len();
+                            println!("  Downloaded {} candles", count);
+
+                            // Write to file
+                            let filepath = output_dir.join(format!("{}-{}.{}",
+                                symbol.freqtrade_format(),
+                                timeframe.label,
+                                format.extension()
+                            ));
+
+                            match format {
+                                DataFormat::Feather => {
+                                    if let Err(e) = ftdata_storage::feather::write_feather(&filepath, &ohlcv_data) {
+                                        println!("  Failed to write feather: {}", e);
+                                        return (idx, count, "write_failed".to_string());
+                                    }
+                                }
+                                DataFormat::Parquet => {
+                                    if let Err(e) = ftdata_storage::parquet::write_parquet(&filepath, &ohlcv_data) {
+                                        println!("  Failed to write parquet: {}", e);
+                                        return (idx, count, "write_failed".to_string());
+                                    }
+                                }
+                                _ => {
+                                    println!("  Format not supported");
+                                    return (idx, count, "format_unsupported".to_string());
                                 }
                             }
-                            DataFormat::Parquet => {
-                                if let Err(e) = ftdata_storage::parquet::write_parquet(&filepath, &ohlcv_data) {
-                                    println!("  Failed to write parquet: {}", e);
-                                } else {
-                                    println!("  Saved to {}", filepath.display());
-                                }
-                            }
-                            _ => {
-                                println!("  Format not yet supported for bulk download");
-                            }
+
+                            println!("  Saved to {}", filepath.display());
+                            (idx, count, "success".to_string())
+                        }
+                        Err(e) => {
+                            println!("  Failed to parse: {}", e);
+                            (idx, 0, "parse_failed".to_string())
                         }
                     }
-                    Err(e) => {
-                        println!("  Failed to parse: {}", e);
-                    }
+                })
+            }).collect();
+
+            // Wait for all downloads to complete
+            let mut results: Vec<(usize, usize, String)> = Vec::new();
+            for handle in handles {
+                if let Ok(result) = handle.await {
+                    results.push(result);
                 }
             }
+
+            // Sort by index and report
+            results.sort_by_key(|r| r.0);
+            let total_candles: usize = results.iter().map(|r| r.1).sum();
+            let failed = results.iter().filter(|r| r.2 != "success").count();
+            println!("\n=== Download Complete: {} candles ({} failed) ===", total_candles, failed);
         }
     }
 
-    println!("\n=== Download Complete ===");
     Ok(())
 }
 
-/// Extract ZIP and parse Binance CSV format
-async fn extract_and_parse_csv(zip_data: &[u8], time_range: &TimeRange) -> anyhow::Result<Vec<OHLCV>> {
+/// Extract ZIP or gzip and parse Binance CSV format
+async fn extract_and_parse_csv(data: &[u8], time_range: &TimeRange) -> anyhow::Result<Vec<OHLCV>> {
     use std::io::Cursor;
 
-    let cursor = Cursor::new(zip_data);
-    let mut archive = ZipArchive::new(cursor)?;
+    // Try ZIP first, then fall back to gzip
+    let contents = if data.len() > 2 && data[0] == 0x50 && data[1] == 0x4B {
+        // ZIP signature (PK)
+        let cursor = Cursor::new(data);
+        let mut archive = match ZipArchive::new(cursor) {
+            Ok(a) => a,
+            Err(_) => return Ok(vec![]),
+        };
 
-    if archive.len() == 0 {
-        return Ok(vec![]);
-    }
+        if archive.len() == 0 {
+            return Ok(vec![]);
+        }
 
+        let mut contents = String::new();
+        let mut file = archive.by_index(0)?;
+        file.read_to_string(&mut contents)?;
+        contents
+    } else {
+        // Try gzip
+        let cursor = Cursor::new(data);
+        use flate2::read::GzDecoder;
+        let mut decoder = GzDecoder::new(cursor);
+        let mut contents = String::new();
+        use std::io::Read;
+        let _ = decoder.read_to_string(&mut contents)?;
+        contents
+    };
+
+    parse_csv_contents(&contents, time_range)
+}
+
+/// Parse CSV contents into OHLCV data
+fn parse_csv_contents(contents: &str, time_range: &TimeRange) -> anyhow::Result<Vec<OHLCV>> {
     let mut ohlcv_data = vec![];
 
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
+    // Parse CSV lines (skip header)
+    for line in contents.lines().skip(1) {
+        let fields: Vec<&str> = line.split(',').collect();
+        if fields.len() >= 6 {
+            let open_time: i64 = fields[0].parse().unwrap_or(0);
+            let open: f64 = fields[1].parse().unwrap_or(0.0);
+            let high: f64 = fields[2].parse().unwrap_or(0.0);
+            let low: f64 = fields[3].parse().unwrap_or(0.0);
+            let close: f64 = fields[4].parse().unwrap_or(0.0);
+            let volume: f64 = fields[5].parse().unwrap_or(0.0);
 
-        // Parse CSV lines (skip header)
-        for line in contents.lines().skip(1) {
-            let fields: Vec<&str> = line.split(',').collect();
-            if fields.len() >= 6 {
-                let open_time: i64 = fields[0].parse().unwrap_or(0);
-                let open: f64 = fields[1].parse().unwrap_or(0.0);
-                let high: f64 = fields[2].parse().unwrap_or(0.0);
-                let low: f64 = fields[3].parse().unwrap_or(0.0);
-                let close: f64 = fields[4].parse().unwrap_or(0.0);
-                let volume: f64 = fields[5].parse().unwrap_or(0.0);
+            // Binance CSV timestamp formats:
+            // - Nanoseconds (18+ digits): 1735689600000000 -> /1000 = 1735689600000 ms
+            // - Milliseconds (13 digits): 1672531200000 -> already ms
+            // - Seconds (10 digits): 1735689600 -> *1000 = 1735689600000 ms
+            let open_time_ms = if open_time > 9999999999999 {
+                // 14+ digits - nanoseconds -> divide by 1000
+                open_time / 1000
+            } else if open_time >= 946684800000 && open_time <= 1767225600000 {
+                // 13 digits in valid millisecond range (2000-2026) -> already milliseconds
+                open_time
+            } else if open_time < 10000000000 {
+                // 10 digits - seconds -> multiply by 1000
+                open_time * 1000
+            } else {
+                open_time
+            };
 
-                // Filter by time range
-                if open_time >= time_range.start && open_time < time_range.end {
-                    ohlcv_data.push(OHLCV {
-                        timestamp: open_time,
-                        open,
-                        high,
-                        low,
-                        close,
-                        volume,
-                    });
-                }
+            // Filter by time range
+            if open_time_ms >= time_range.start && open_time_ms < time_range.end {
+                ohlcv_data.push(OHLCV {
+                    timestamp: open_time_ms,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                });
             }
         }
     }
 
     // Sort by timestamp
     ohlcv_data.sort_by_key(|k| k.timestamp);
+
+    Ok(ohlcv_data)
+}
+
+/// Download data via REST API (for exchanges without bulk archives)
+async fn download_via_api(
+    http_client: &HttpClient,
+    exchange: Exchange,
+    symbol: &Symbol,
+    timeframe: &Timeframe,
+    time_range: &TimeRange,
+    output_dir: &std::path::Path,
+    format: DataFormat,
+) -> anyhow::Result<()> {
+    use ftdata_core::domain::Timeframe;
+
+    // Calculate how many API calls needed based on timeframe
+    let candles_per_request = 1000u32;
+    let timeframe_ms = timeframe.millis;
+    let total_ms = time_range.end - time_range.start;
+    let total_candles = (total_ms / timeframe_ms) as u32;
+    let api_calls_needed = (total_candles + candles_per_request - 1) / candles_per_request;
+
+    println!("  Estimated {} candles, {} API calls needed", total_candles, api_calls_needed);
+
+    let mut all_ohlcv = Vec::new();
+    let mut current_start = time_range.start;
+
+    // For OKX, use their history-candle API
+    // For Bybit, use their kline API
+    let bar = match exchange {
+        Exchange::Bybit => {
+            // Bybit uses numeric intervals: 1, 3, 5, 15, 30, 60, 120, 240, etc.
+            match timeframe.label.as_str() {
+                "1m" => "1",
+                "3m" => "3",
+                "5m" => "5",
+                "15m" => "15",
+                "30m" => "30",
+                "1h" => "60",
+                "2h" => "120",
+                "4h" => "240",
+                "6h" => "360",
+                "12h" => "720",
+                "1d" => "D",
+                "1w" => "W",
+                _ => "60",
+            }
+        }
+        _ => timeframe.label.as_str(),
+    };
+
+    while current_start < time_range.end {
+        let current_end = (current_start + timeframe_ms * candles_per_request as i64).min(time_range.end);
+
+        let url = match exchange {
+            Exchange::OKX => {
+                format!(
+                    "https://www.okx.com/api/v5/market/history-candle?instId={}&bar={}&after={}&before={}&limit={}",
+                    symbol.freqtrade_format().replace("_", "-"),
+                    bar,
+                    current_end,
+                    current_start,
+                    candles_per_request
+                )
+            }
+            Exchange::Bybit => {
+                format!(
+                    "https://api.bybit.com/v5/market/kline?category=spot&symbol={}&interval={}&start={}&end={}&limit={}",
+                    symbol.freqtrade_format().replace("_", ""),
+                    bar,
+                    current_start,
+                    current_end,
+                    candles_per_request
+                )
+            }
+            _ => {
+                // Binance uses bulk archives, shouldn't reach here
+                println!("  REST API not supported for this exchange");
+                return Ok(());
+            }
+        };
+
+        println!("  Fetching {}-{}...", current_start, current_end);
+
+        match http_client.download_file(&url).await {
+            Ok(data) => {
+                let json_str = String::from_utf8_lossy(&data);
+                let ohlcv_batch = parse_api_response(&json_str, exchange)?;
+
+                if ohlcv_batch.is_empty() {
+                    println!("  No data returned, stopping");
+                    break;
+                }
+
+                println!("  Got {} candles", ohlcv_batch.len());
+                all_ohlcv.extend(ohlcv_batch);
+                current_start = current_end;
+            }
+            Err(e) => {
+                println!("  API request failed: {:?}", e);
+                break;
+            }
+        }
+
+        // Rate limiting - be nice to the API
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    }
+
+    if !all_ohlcv.is_empty() {
+        // Sort and dedup
+        all_ohlcv.sort_by_key(|k| k.timestamp);
+        all_ohlcv.dedup_by_key(|k| k.timestamp);
+
+        let filename = format!("{}-{}.{}",
+            symbol.freqtrade_format(),
+            timeframe.label,
+            format.extension()
+        );
+        let filepath = output_dir.join(&filename);
+
+        match format {
+            DataFormat::Feather => {
+                if let Err(e) = ftdata_storage::feather::write_feather(&filepath, &all_ohlcv) {
+                    println!("  Failed to write feather: {}", e);
+                } else {
+                    println!("  Saved {} candles to {}", all_ohlcv.len(), filepath.display());
+                }
+            }
+            DataFormat::Parquet => {
+                if let Err(e) = ftdata_storage::parquet::write_parquet(&filepath, &all_ohlcv) {
+                    println!("  Failed to write parquet: {}", e);
+                } else {
+                    println!("  Saved {} candles to {}", all_ohlcv.len(), filepath.display());
+                }
+            }
+            _ => {
+                println!("  Format not yet supported");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Parse OHLCV data from API JSON response
+fn parse_api_response(json_str: &str, exchange: Exchange) -> anyhow::Result<Vec<OHLCV>> {
+    let mut ohlcv_data = Vec::new();
+
+    match exchange {
+        Exchange::OKX => {
+            #[derive(serde::Deserialize)]
+            struct OkxResponse {
+                data: Vec<Vec<String>>,
+            }
+
+            if let Ok(response) = serde_json::from_str::<OkxResponse>(json_str) {
+                for candle in response.data {
+                    if candle.len() >= 6 {
+                        let timestamp: i64 = candle[0].parse().unwrap_or(0);
+                        let open: f64 = candle[1].parse().unwrap_or(0.0);
+                        let high: f64 = candle[2].parse().unwrap_or(0.0);
+                        let low: f64 = candle[3].parse().unwrap_or(0.0);
+                        let close: f64 = candle[4].parse().unwrap_or(0.0);
+                        let volume: f64 = candle[5].parse().unwrap_or(0.0);
+
+                        if timestamp > 0 {
+                            ohlcv_data.push(OHLCV {
+                                timestamp,
+                                open,
+                                high,
+                                low,
+                                close,
+                                volume,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        Exchange::Bybit => {
+            #[derive(serde::Deserialize)]
+            struct BybitResponse {
+                result: BybitResult,
+            }
+            #[derive(serde::Deserialize)]
+            struct BybitResult {
+                list: Vec<Vec<String>>,
+            }
+
+            if let Ok(response) = serde_json::from_str::<BybitResponse>(json_str) {
+                for candle in response.result.list {
+                    if candle.len() >= 6 {
+                        let timestamp: i64 = candle[0].parse().unwrap_or(0);
+                        let open: f64 = candle[1].parse().unwrap_or(0.0);
+                        let high: f64 = candle[2].parse().unwrap_or(0.0);
+                        let low: f64 = candle[3].parse().unwrap_or(0.0);
+                        let close: f64 = candle[4].parse().unwrap_or(0.0);
+                        let volume: f64 = candle[5].parse().unwrap_or(0.0);
+
+                        if timestamp > 0 {
+                            ohlcv_data.push(OHLCV {
+                                timestamp,
+                                open,
+                                high,
+                                low,
+                                close,
+                                volume,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
 
     Ok(ohlcv_data)
 }
