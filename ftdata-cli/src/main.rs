@@ -51,6 +51,10 @@ enum Commands {
         /// Output format (feather, parquet, json)
         #[arg(long, default_value = "feather")]
         format: String,
+
+        /// Market type (spot, futures)
+        #[arg(long, default_value = "spot")]
+        market: String,
     },
 
     /// Update to latest (incremental)

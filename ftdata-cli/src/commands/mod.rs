@@ -22,11 +22,12 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
             timeframes,
             timerange,
             format,
-        } => (exchange.clone(), pairs.clone(), timeframes.clone(), timerange.clone(), format.clone()),
+            market,
+        } => (exchange.clone(), pairs.clone(), timeframes.clone(), timerange.clone(), format.clone(), market.clone()),
         _ => return Err(anyhow::anyhow!("invalid command")),
     };
 
-    let (exchange_str, pairs, timeframes, timerange_str, format_str) = download_cmd;
+    let (exchange_str, pairs, timeframes, timerange_str, format_str, market_str) = download_cmd;
 
     println!("ftdata download");
     println!("Exchange: {}", exchange_str);
@@ -34,9 +35,13 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
     println!("Timeframes: {:?}", timeframes);
     println!("Time range: {}", timerange_str);
     println!("Format: {}", format_str);
+    println!("Market: {}", market_str);
     println!("Output: {:?}", cli.output);
 
     let exchange = Exchange::from_str(&exchange_str)
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+    let market_type = MarketType::from_str(&market_str)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Parse time range
@@ -69,16 +74,16 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
     // Download for each symbol and timeframe
     for symbol in &symbols {
         for timeframe in &timeframes {
-            println!("\n--- Downloading {} {} ---", symbol, timeframe);
+            println!("\n--- Downloading {} {} ({}) ---", symbol, timeframe, market_str);
 
             // Get bulk URLs from exchange adapter
             let source = ftdata_sources::ExchangeAdapterFactory::create(exchange);
-            let urls = source.get_bulk_urls(symbol, timeframe, &time_range).await?;
+            let urls = source.get_bulk_urls(symbol, timeframe, &time_range, market_type).await?;
 
             if urls.is_empty() {
                 // Fall back to REST API if no bulk URLs available
                 println!("No bulk URLs available, falling back to REST API...");
-                download_via_api(&http_client, exchange, symbol, timeframe, &time_range, &output_dir, format).await?;
+                download_via_api(&http_client, exchange, symbol, timeframe, &time_range, &output_dir, format, market_type).await?;
                 continue;
             }
 
@@ -365,6 +370,7 @@ async fn download_via_api(
     time_range: &TimeRange,
     output_dir: &std::path::Path,
     format: DataFormat,
+    _market_type: MarketType,
 ) -> anyhow::Result<()> {
     use ftdata_core::domain::Timeframe;
 

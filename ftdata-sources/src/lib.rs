@@ -26,6 +26,7 @@ pub trait MarketDataSource: Send + Sync {
         symbol: &Symbol,
         timeframe: &Timeframe,
         time_range: &TimeRange,
+        market_type: MarketType,
     ) -> DownloadResult<Vec<DownloadUrl>>;
 
     async fn fetch_ohlcv(
@@ -104,9 +105,17 @@ pub mod binance {
                 symbol: &Symbol,
                 timeframe: &Timeframe,
                 time_range: &TimeRange,
+                market_type: MarketType,
             ) -> DownloadResult<Vec<DownloadUrl>> {
                 let mut urls = vec![];
                 let mut current = time_range.start;
+
+                // Determine URL path based on market type
+                let market_path = match market_type {
+                    MarketType::Spot => "spot",
+                    MarketType::Futures => "futures/um", // USD-M futures
+                    _ => "spot",
+                };
 
                 while current < time_range.end {
                     let dt = chrono::Utc.timestamp_millis_opt(current).unwrap();
@@ -114,7 +123,8 @@ pub mod binance {
                     let month = dt.month();
 
                     let url = format!(
-                        "https://data.binance.vision/data/spot/monthly/klines/{}/{}/{}-{}-{}-{:02}.zip",
+                        "https://data.binance.vision/data/{}/monthly/klines/{}/{}/{}-{}-{}-{:02}.zip",
+                        market_path,
                         symbol.binance_format(),
                         timeframe.label,
                         symbol.binance_format(),
@@ -264,6 +274,7 @@ pub mod bybit {
                 symbol: &Symbol,
                 timeframe: &Timeframe,
                 time_range: &TimeRange,
+                _market_type: MarketType,
             ) -> DownloadResult<Vec<DownloadUrl>> {
                 let mut urls = vec![];
                 let mut current = time_range.start;
@@ -416,6 +427,7 @@ pub mod okx {
                 _symbol: &Symbol,
                 _timeframe: &Timeframe,
                 _time_range: &TimeRange,
+                _market_type: MarketType,
             ) -> DownloadResult<Vec<DownloadUrl>> {
                 // OKX doesn't have public bulk archives like Binance/Bybit
                 // Return empty - will fall back to REST API
@@ -530,6 +542,7 @@ pub mod generic {
                 _symbol: &Symbol,
                 _timeframe: &Timeframe,
                 _time_range: &TimeRange,
+                _market_type: MarketType,
             ) -> DownloadResult<Vec<DownloadUrl>> {
                 Ok(vec![])
             }
