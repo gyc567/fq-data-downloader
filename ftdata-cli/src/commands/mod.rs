@@ -6,6 +6,7 @@ use ftdata_core::planner::{ChunkDecomposer, DownloadPlan, OverallPlan, SourceRes
 use ftdata_analysis::gaps::{self, GapReport};
 use ftdata_http::client::HttpClient;
 use ftdata_http::rate_limit::TokenBucketLimiter;
+use ftdata_storage::checkpoint::{CheckpointManager, CheckpointStatus};
 use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -82,7 +83,59 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
             }
 
             let total_chunks = urls.len();
-            println!("Downloading {} chunks in parallel (max 4 concurrent)...", total_chunks);
+
+            // Initialize checkpoint manager for resume support
+            let db_path = cli.output.join("_checkpoints").join("checkpoints.db");
+            let checkpoint_mgr = match CheckpointManager::new(&db_path) {
+                Ok(mgr) => Arc::new(mgr),
+                Err(e) => {
+                    println!("  Warning: Could not initialize checkpoint database: {}", e);
+                    println!("  Continuing without checkpoint support...");
+                    continue;
+                }
+            };
+
+            // Load existing checkpoints to skip completed chunks
+            let existing_checkpoints: std::collections::HashSet<String> = {
+                if let Ok(cps) = checkpoint_mgr.get_checkpoints(&exchange_str, &symbol.to_string(), &timeframe.label) {
+                    cps.iter()
+                        .filter(|cp| cp.status == CheckpointStatus::Completed)
+                        .map(|cp| cp.chunk_url.clone())
+                        .collect()
+                } else {
+                    std::collections::HashSet::new()
+                }
+            };
+
+            // Filter URLs to only include non-completed chunks
+            let pending_urls: Vec<_> = urls.iter()
+                .filter(|u| !existing_checkpoints.contains(&u.url))
+                .cloned()
+                .collect();
+
+            let pending_count = pending_urls.len();
+            let skipped = total_chunks - pending_count;
+
+            if skipped > 0 {
+                println!("Skipping {} already completed chunks", skipped);
+            }
+            if pending_count > 0 {
+                println!("Downloading {} chunks in parallel (max 4 concurrent)...", pending_count);
+            }
+
+            // Create progress bar for overall download progress
+            use indicatif::{ProgressBar, ProgressStyle};
+            let progress_bar = if pending_count > 0 {
+                let pb = ProgressBar::new(pending_count as u64);
+                pb.set_style(ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {msg}")
+                    .unwrap()
+                    .progress_chars("=>-"));
+                pb.set_message("Downloading...");
+                Some(pb)
+            } else {
+                None
+            };
 
             // Download chunks in parallel with semaphore-controlled concurrency
             use tokio::sync::Semaphore;
@@ -91,15 +144,23 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
             let timeframe_clone = timeframe.clone();
             let output_dir_clone = output_dir.clone();
             let format_clone = format;
+            let checkpoint_mgr_clone = checkpoint_mgr.clone();
+            let exchange_str_clone = exchange_str.clone();
+            let symbol_str_clone = symbol.to_string();
+            let timeframe_label_clone = timeframe.label.clone();
 
-            let handles: Vec<_> = urls.iter().enumerate().map(|(idx, download_url)| {
+            let handles: Vec<_> = pending_urls.iter().enumerate().map(|(idx, download_url)| {
                 let http_client = http_client.clone();
                 let semaphore = semaphore.clone();
                 let symbol = symbol_clone.clone();
                 let timeframe = timeframe_clone.clone();
                 let output_dir = output_dir_clone.clone();
                 let format = format_clone;
-                let total_chunks = total_chunks;
+                let checkpoint_mgr = checkpoint_mgr_clone.clone();
+                let exchange_str = exchange_str_clone.clone();
+                let symbol_str = symbol_str_clone.clone();
+                let timeframe_label = timeframe_label_clone.clone();
+                let total_chunks = pending_count;
                 let url_info = download_url.clone();
 
                 tokio::spawn(async move {
@@ -108,11 +169,19 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
                     let filename = url_info.url.split('/').last().unwrap_or("file");
                     println!("\n[{}/{}] Downloading {}...", idx + 1, total_chunks, filename);
 
+                    // Mark as downloading in checkpoint
+                    let cp = ftdata_storage::checkpoint::Checkpoint::new(
+                        &exchange_str, &symbol_str, &timeframe_label, &url_info.url
+                    );
+                    let _ = checkpoint_mgr.save_checkpoint(&cp);
+                    let _ = checkpoint_mgr.mark_downloading(&url_info.url);
+
                     // Download zip file
                     let zip_data = match http_client.download_file(&url_info.url).await {
                         Ok(data) => data,
                         Err(e) => {
                             println!("  Failed to download: {:?}", e);
+                            let _ = checkpoint_mgr.mark_failed(&url_info.url);
                             return (idx, 0, "download_failed".to_string());
                         }
                     };
@@ -134,26 +203,32 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
                                 DataFormat::Feather => {
                                     if let Err(e) = ftdata_storage::feather::write_feather(&filepath, &ohlcv_data) {
                                         println!("  Failed to write feather: {}", e);
+                                        let _ = checkpoint_mgr.mark_failed(&url_info.url);
                                         return (idx, count, "write_failed".to_string());
                                     }
                                 }
                                 DataFormat::Parquet => {
                                     if let Err(e) = ftdata_storage::parquet::write_parquet(&filepath, &ohlcv_data) {
                                         println!("  Failed to write parquet: {}", e);
+                                        let _ = checkpoint_mgr.mark_failed(&url_info.url);
                                         return (idx, count, "write_failed".to_string());
                                     }
                                 }
                                 _ => {
                                     println!("  Format not supported");
+                                    let _ = checkpoint_mgr.mark_failed(&url_info.url);
                                     return (idx, count, "format_unsupported".to_string());
                                 }
                             }
 
+                            // Mark as completed
+                            let _ = checkpoint_mgr.mark_completed(&url_info.url, url_info.etag.as_deref());
                             println!("  Saved to {}", filepath.display());
                             (idx, count, "success".to_string())
                         }
                         Err(e) => {
                             println!("  Failed to parse: {}", e);
+                            let _ = checkpoint_mgr.mark_failed(&url_info.url);
                             (idx, 0, "parse_failed".to_string())
                         }
                     }
@@ -165,14 +240,23 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
             for handle in handles {
                 if let Ok(result) = handle.await {
                     results.push(result);
+                    // Update progress bar
+                    if let Some(ref pb) = progress_bar {
+                        pb.inc(1);
+                    }
                 }
+            }
+
+            // Finalize progress bar
+            if let Some(ref pb) = progress_bar {
+                pb.finish_with_message("Done!");
             }
 
             // Sort by index and report
             results.sort_by_key(|r| r.0);
             let total_candles: usize = results.iter().map(|r| r.1).sum();
             let failed = results.iter().filter(|r| r.2 != "success").count();
-            println!("\n=== Download Complete: {} candles ({} failed) ===", total_candles, failed);
+            println!("\n=== Download Complete: {} candles ({} failed, {} skipped) ===", total_candles, failed, skipped);
         }
     }
 
@@ -874,7 +958,7 @@ pub async fn convert(cli: Cli) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Clean partial/broken files
+/// Clean partial/broken files and failed checkpoints
 pub async fn clean(cli: Cli) -> anyhow::Result<()> {
     let clean_cmd = match &cli.command {
         crate::Commands::Clean { exchange, dry_run } => (exchange.clone(), *dry_run),
@@ -889,6 +973,7 @@ pub async fn clean(cli: Cli) -> anyhow::Result<()> {
 
     let temp_dir = cli.output.join("_temp");
     let locks_dir = cli.output.join("_locks");
+    let checkpoint_db = cli.output.join("_checkpoints").join("checkpoints.db");
 
     let mut files_to_clean = vec![];
 
@@ -914,20 +999,37 @@ pub async fn clean(cli: Cli) -> anyhow::Result<()> {
         }
     }
 
-    if files_to_clean.is_empty() {
-        println!("No partial files found.");
+    // Clear failed checkpoints from database
+    let mut checkpoints_cleared = 0u64;
+    if checkpoint_db.exists() {
+        if let Ok(mgr) = ftdata_storage::checkpoint::CheckpointManager::new(&checkpoint_db) {
+            let exchange_filter = clean_cmd.0.as_deref();
+            checkpoints_cleared = mgr.clear_failed(exchange_filter)?;
+            if checkpoints_cleared > 0 {
+                println!("Found {} failed checkpoint(s) to clear", checkpoints_cleared);
+            }
+        }
+    }
+
+    if files_to_clean.is_empty() && checkpoints_cleared == 0 {
+        println!("No partial files or failed checkpoints found.");
         return Ok(());
     }
 
-    println!("\nFound {} file(s) to clean:", files_to_clean.len());
-    for f in &files_to_clean {
-        println!("  - {:?}", f);
+    if !files_to_clean.is_empty() {
+        println!("\nFound {} file(s) to clean:", files_to_clean.len());
+        for f in &files_to_clean {
+            println!("  - {:?}", f);
+        }
     }
 
     if !clean_cmd.1 {
         println!("\nCleaning...");
         for f in &files_to_clean {
             std::fs::remove_file(f)?;
+        }
+        if checkpoints_cleared > 0 {
+            println!("Cleared {} failed checkpoint(s)", checkpoints_cleared);
         }
         println!("Clean complete.");
     } else {

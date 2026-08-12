@@ -1,5 +1,6 @@
 //! Storage layer for feather/parquet output
 
+pub mod checkpoint;
 pub mod feather;
 pub mod parquet;
 pub mod raw;

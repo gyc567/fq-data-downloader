@@ -16,5 +16,6 @@ tracing.workspace = true
 polars.workspace = true
 directories.workspace = true
 futures.workspace = true
+parking_lot.workspace = true
 
 ftdata-core = { path = "../ftdata-core" }

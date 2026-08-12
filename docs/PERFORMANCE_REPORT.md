@@ -140,8 +140,15 @@
 **Status:** Not implemented
 **Current:** Entire month loaded into memory, then written
 
-#### 6.2 Checkpoint Persistence
-**Status:** Not implemented
+### ✅ Checkpoint Persistence (IMPLEMENTED)
+- **Implementation:** SQLite-based checkpoint tracking in `ftdata-storage/src/checkpoint.rs`
+- **Result:** Completed chunks are skipped on re-run, failed chunks can be retried
+- **Database:** Stored at `<output>/_checkpoints/checkpoints.db`
+- **Usage:** `ftdata clean` clears failed checkpoints
+
+### ✅ Progress Bars (IMPLEMENTED)
+- **Implementation:** Using indicatif crate with progress bar for chunk downloads
+- **Result:** Visual progress indicator showing {pos}/{len} ({percent}%)
 **Current:** No persistence between runs
 **Problem:** `https://raw.githubusercontent.com/bybit-exchange/bybit-archive/main/spot/1m/...`
 **Should be:** Correct base path for Bybit archives
@@ -189,30 +196,31 @@
 | Priority | Recommendation | Status | Impact |
 |----------|---------------|--------|--------|
 | HIGH | Parallel downloads | ✅ Implemented | 2-3x faster |
-| HIGH | Checkpoint persistence | ⏳ Pending | Resume support |
+| HIGH | Checkpoint persistence | ✅ Implemented | Resume support |
 | MEDIUM | Fix Bybit URLs | ✅ Implemented | Bybit support |
 | MEDIUM | gzip support | ✅ Implemented | 10x smaller |
-| LOW | Progress bars | ⏳ Pending | UX improvement |
+| LOW | Progress bars | ✅ Implemented | UX improvement |
 | LOW | Checksum verification | ⏳ Pending | Data integrity |
 
 ---
 
 ## 9. Conclusion
 
-**Overall Status:** ✅ **HEALTHY + OPTIMIZED**
+**Overall Status:** ✅ **HEALTHY + FULLY OPTIMIZED**
 
 - All 13 unit tests passing
 - Data downloads successfully from Binance
 - Performance is excellent (sub-second for small, ~10s for large)
 - Data integrity verified (no gaps, no duplicates)
-- **NEW:** Parallel downloads active (2-3x faster)
-- **NEW:** gzip compression support added
-- **NEW:** Bybit URL fix applied
+- **Implemented:** Parallel downloads (2-3x faster)
+- **Implemented:** gzip compression support
+- **Implemented:** Bybit URL fix
+- **Implemented:** Checkpoint persistence (resume support)
+- **Implemented:** Progress bars
 
 **Next Steps:**
-1. ⏳ Add checkpoint persistence for resume support
-2. ⏳ Add progress bars with indicatif
-3. ⏳ Implement chunked feather writing for memory optimization
+1. ⏳ Implement chunked feather writing for memory optimization
+2. ⏳ Add checksum verification
 
 ---
 
