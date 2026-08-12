@@ -58,6 +58,7 @@ pub struct Checkpoint {
     pub status: CheckpointStatus,
     pub downloaded_at: Option<i64>,
     pub etag: Option<String>,
+    pub checksum: Option<String>,
 }
 
 impl Checkpoint {
@@ -76,6 +77,7 @@ impl Checkpoint {
             status: CheckpointStatus::Pending,
             downloaded_at: None,
             etag: None,
+            checksum: None,
         }
     }
 }
@@ -112,7 +114,8 @@ impl CheckpointManager {
                 chunk_url       TEXT NOT NULL UNIQUE,
                 status          TEXT NOT NULL DEFAULT 'pending',
                 downloaded_at   INTEGER,
-                etag            TEXT
+                etag            TEXT,
+                checksum        TEXT
             )
             "#,
             [],
@@ -125,6 +128,16 @@ impl CheckpointManager {
             [],
         )?;
 
+        // Migration: add checksum column if missing from existing table
+        let checksum_count: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('checkpoints') WHERE name = 'checksum'",
+            [],
+            |row| row.get(0),
+        )?;
+        if checksum_count == 0 {
+            conn.execute("ALTER TABLE checkpoints ADD COLUMN checksum TEXT", [])?;
+        }
+
         Ok(())
     }
 
@@ -134,13 +147,10 @@ impl CheckpointManager {
         let now = chrono::Utc::now().timestamp_millis();
         let downloaded_at = cp.downloaded_at.unwrap_or(now);
 
+        // Use INSERT OR REPLACE which properly returns the rowid
         conn.execute(
-            r#"INSERT INTO checkpoints (exchange, symbol, timeframe, chunk_url, status, downloaded_at, etag)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-               ON CONFLICT(chunk_url) DO UPDATE SET
-                   status = excluded.status,
-                   downloaded_at = excluded.downloaded_at,
-                   etag = excluded.etag"#,
+            r#"INSERT OR REPLACE INTO checkpoints (exchange, symbol, timeframe, chunk_url, status, downloaded_at, etag, checksum)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
             params![
                 cp.exchange,
                 cp.symbol,
@@ -149,6 +159,7 @@ impl CheckpointManager {
                 cp.status.as_str(),
                 downloaded_at,
                 cp.etag,
+                cp.checksum,
             ],
         )?;
 
@@ -164,7 +175,7 @@ impl CheckpointManager {
     ) -> Result<Vec<Checkpoint>, CheckpointError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            r#"SELECT id, exchange, symbol, timeframe, chunk_url, status, downloaded_at, etag
+            r#"SELECT id, exchange, symbol, timeframe, chunk_url, status, downloaded_at, etag, checksum
                FROM checkpoints
                WHERE exchange = ?1 AND symbol = ?2 AND timeframe = ?3"#,
         )?;
@@ -180,6 +191,7 @@ impl CheckpointManager {
                     .unwrap_or(CheckpointStatus::Pending),
                 downloaded_at: row.get(6)?,
                 etag: row.get(7)?,
+                checksum: row.get(8)?,
             })
         })?;
 
@@ -190,7 +202,7 @@ impl CheckpointManager {
     pub fn get_checkpoint_by_url(&self, chunk_url: &str) -> Result<Option<Checkpoint>, CheckpointError> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            r#"SELECT id, exchange, symbol, timeframe, chunk_url, status, downloaded_at, etag
+            r#"SELECT id, exchange, symbol, timeframe, chunk_url, status, downloaded_at, etag, checksum
                FROM checkpoints WHERE chunk_url = ?1"#,
         )?;
 
@@ -207,6 +219,7 @@ impl CheckpointManager {
                     .unwrap_or(CheckpointStatus::Pending),
                 downloaded_at: row.get(6)?,
                 etag: row.get(7)?,
+                checksum: row.get(8)?,
             }))
         } else {
             Ok(None)
@@ -214,14 +227,25 @@ impl CheckpointManager {
     }
 
     /// Mark a chunk as completed
-    pub fn mark_completed(&self, chunk_url: &str, etag: Option<&str>) -> Result<(), CheckpointError> {
+    pub fn mark_completed(&self, chunk_url: &str, etag: Option<&str>, checksum: Option<&str>) -> Result<(), CheckpointError> {
         let conn = self.conn.lock();
         let now = chrono::Utc::now().timestamp_millis();
         conn.execute(
-            "UPDATE checkpoints SET status = 'completed', downloaded_at = ?1, etag = ?2 WHERE chunk_url = ?3",
-            params![now, etag, chunk_url],
+            "UPDATE checkpoints SET status = 'completed', downloaded_at = ?1, etag = ?2, checksum = ?3 WHERE chunk_url = ?4",
+            params![now, etag, checksum, chunk_url],
         )?;
         Ok(())
+    }
+
+    /// Verify checksum matches the stored one
+    pub fn verify_checksum(&self, chunk_url: &str, checksum: &str) -> Result<bool, CheckpointError> {
+        let cp = self.get_checkpoint_by_url(chunk_url)?;
+        match cp {
+            Some(cp) if cp.checksum.is_some() => {
+                Ok(cp.checksum.as_ref().map(|c| c == checksum).unwrap_or(false))
+            }
+            _ => Ok(false),
+        }
     }
 
     /// Mark a chunk as failed
@@ -353,11 +377,14 @@ mod tests {
         let cp = Checkpoint::new("binance", "BTC/USDT", "1h", "https://example.com/chunk2.zip");
         manager.save_checkpoint(&cp).unwrap();
 
-        manager.mark_completed("https://example.com/chunk2.zip", Some("etag123")).unwrap();
+        manager.mark_completed("https://example.com/chunk2.zip", Some("etag123"), Some("abc123")).unwrap();
 
         let retrieved = manager.get_checkpoint_by_url("https://example.com/chunk2.zip").unwrap();
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().status, CheckpointStatus::Completed);
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.status, CheckpointStatus::Completed);
+        assert_eq!(retrieved.etag, Some("etag123".to_string()));
+        assert_eq!(retrieved.checksum, Some("abc123".to_string()));
     }
 
     #[test]

@@ -149,6 +149,10 @@
 ### ✅ Progress Bars (IMPLEMENTED)
 - **Implementation:** Using indicatif crate with progress bar for chunk downloads
 - **Result:** Visual progress indicator showing {pos}/{len} ({percent}%)
+
+### ✅ Checksum Verification (IMPLEMENTED)
+- **Implementation:** BLAKE3 hash computed from raw zip data, stored in checkpoint DB
+- **Result:** Data integrity verification capability added
 **Current:** No persistence between runs
 **Problem:** `https://raw.githubusercontent.com/bybit-exchange/bybit-archive/main/spot/1m/...`
 **Should be:** Correct base path for Bybit archives
@@ -200,7 +204,7 @@
 | MEDIUM | Fix Bybit URLs | ✅ Implemented | Bybit support |
 | MEDIUM | gzip support | ✅ Implemented | 10x smaller |
 | LOW | Progress bars | ✅ Implemented | UX improvement |
-| LOW | Checksum verification | ⏳ Pending | Data integrity |
+| LOW | Checksum verification | ✅ Implemented | Data integrity |
 
 ---
 
@@ -220,7 +224,6 @@
 
 **Next Steps:**
 1. ⏳ Implement chunked feather writing for memory optimization
-2. ⏳ Add checksum verification
 
 ---
 

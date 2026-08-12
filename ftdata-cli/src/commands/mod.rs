@@ -186,6 +186,12 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
                         }
                     };
 
+                    // Compute BLAKE3 checksum of the raw zip data
+                    let checksum = {
+                        let hash = blake3::hash(&zip_data);
+                        hash.to_hex().to_string()
+                    };
+
                     // Extract and parse CSV
                     match extract_and_parse_csv(&zip_data, &url_info.time_range).await {
                         Ok(ohlcv_data) => {
@@ -222,8 +228,8 @@ pub async fn download(cli: Cli) -> anyhow::Result<()> {
                             }
 
                             // Mark as completed
-                            let _ = checkpoint_mgr.mark_completed(&url_info.url, url_info.etag.as_deref());
-                            println!("  Saved to {}", filepath.display());
+                            let _ = checkpoint_mgr.mark_completed(&url_info.url, url_info.etag.as_deref(), Some(&checksum));
+                            println!("  Saved to {} (checksum: {})", filepath.display(), &checksum[..8]);
                             (idx, count, "success".to_string())
                         }
                         Err(e) => {
