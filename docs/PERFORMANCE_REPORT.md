@@ -205,6 +205,7 @@
 | MEDIUM | gzip support | ✅ Implemented | 10x smaller |
 | LOW | Progress bars | ✅ Implemented | UX improvement |
 | LOW | Checksum verification | ✅ Implemented | Data integrity |
+| LOW | Chunked feather writing | ✅ Implemented | Memory optimization |
 
 ---
 

@@ -5,6 +5,7 @@ pub mod feather;
 pub mod parquet;
 pub mod raw;
 pub mod sqlite;
+pub mod chunked_writer;
 
 use ftdata_core::domain::*;
 use std::path::{Path, PathBuf};

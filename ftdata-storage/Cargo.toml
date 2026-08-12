@@ -19,3 +19,4 @@ futures.workspace = true
 parking_lot.workspace = true
 
 ftdata-core = { path = "../ftdata-core" }
+tempfile = "3.14"
