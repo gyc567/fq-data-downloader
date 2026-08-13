@@ -13,7 +13,8 @@ pub async fn handler(State(_state): State<AppState>) -> Json<Value> {
             "POST /v1/quote",
             "POST /v1/download",
             "GET  /v1/jobs/{id}",
-            "GET  /v1/info"
+            "GET  /v1/info",
+            "GET  /v1/reconcile"
         ],
         "free_tier": {
             "max_rows_per_request": 50_000,

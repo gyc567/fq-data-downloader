@@ -362,3 +362,200 @@ async fn completed_download_emits_receipt_aggregated_by_reconcile() {
         amount
     );
 }
+
+#[tokio::test]
+async fn quote_works_for_all_supported_exchanges() {
+    let (base, _m) = spawn_app().await;
+    let client = reqwest::Client::new();
+    for exchange in ["binance", "bybit", "okx"] {
+        let resp = client
+            .post(format!("{base}/v1/quote"))
+            .json(&json!({
+                "exchange": exchange,
+                "pairs": ["BTC/USDT"],
+                "timeframes": ["1m"],
+                "timerange": "20230101-20230108",
+                "market": "spot"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200, "exchange {exchange} should quote");
+        let v: Value = resp.json().await.unwrap();
+        assert!(v["quote_id"].is_string());
+        assert!(v["price_usdc"].as_str().unwrap().parse::<f64>().unwrap() > 0.0);
+    }
+}
+
+#[tokio::test]
+async fn quote_with_lower_resolution_timeframe_is_cheaper() {
+    let (base, _m) = spawn_app().await;
+    let client = reqwest::Client::new();
+    let q1m = client
+        .post(format!("{base}/v1/quote"))
+        .json(&json!({
+            "exchange": "binance",
+            "pairs": ["BTC/USDT"],
+            "timeframes": ["1m"],
+            "timerange": "20230101-20230201"
+        }))
+        .send()
+        .await
+        .unwrap();
+    let q1d = client
+        .post(format!("{base}/v1/quote"))
+        .json(&json!({
+            "exchange": "binance",
+            "pairs": ["BTC/USDT"],
+            "timeframes": ["1d"],
+            "timerange": "20230101-20230201"
+        }))
+        .send()
+        .await
+        .unwrap();
+    let p1m: f64 = q1m.json::<Value>().await.unwrap()["price_usdc"].as_str().unwrap().parse().unwrap();
+    let p1d: f64 = q1d.json::<Value>().await.unwrap()["price_usdc"].as_str().unwrap().parse().unwrap();
+    assert!(p1d < p1m, "1d should be cheaper than 1m, got 1d={p1d} 1m={p1m}");
+}
+
+#[tokio::test]
+async fn quote_for_futures_market_is_more_expensive_than_spot() {
+    let (base, _m) = spawn_app().await;
+    let client = reqwest::Client::new();
+    let body = |market: &str| json!({
+        "exchange": "binance",
+        "pairs": ["BTC/USDT"],
+        "timeframes": ["1m"],
+        "timerange": "20230101-20230108",
+        "market": market
+    });
+    let spot = client.post(format!("{base}/v1/quote")).json(&body("spot")).send().await.unwrap();
+    let fut = client.post(format!("{base}/v1/quote")).json(&body("futures")).send().await.unwrap();
+    let ps: f64 = spot.json::<Value>().await.unwrap()["price_usdc"].as_str().unwrap().parse().unwrap();
+    let pf: f64 = fut.json::<Value>().await.unwrap()["price_usdc"].as_str().unwrap().parse().unwrap();
+    assert!(pf > ps, "futures should be more expensive than spot: spot={ps} futures={pf}");
+}
+
+#[tokio::test]
+async fn concurrent_downloads_get_distinct_job_ids() {
+    let (base, m) = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    // Helper: submit one full quote→pay→download cycle.
+    async fn one_round(client: &reqwest::Client, base: &str) -> String {
+        let r1 = client
+            .post(format!("{base}/v1/download"))
+            .json(&sample_body())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r1.status(), 402);
+        let challenge: Value = r1.json::<Value>().await.unwrap()["payment_required"].clone();
+        let proof = PaymentProof {
+            scheme: Scheme::Exact,
+            network: Network::Base,
+            asset: Asset::Usdc,
+            payer: "0xAGENT".into(),
+            amount: challenge["max_amount"].as_str().unwrap().to_string(),
+            quote_id: challenge["quote_id"].as_str().unwrap().to_string(),
+            signature: "0xSIG".into(),
+            nonce: "n1".into(),
+            valid_until: UnixSecs::now(),
+        };
+        let r2 = client
+            .post(format!("{base}/v1/download"))
+            .header("x-payment", serde_json::to_string(&proof).unwrap())
+            .json(&sample_body())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r2.status(), 202);
+        r2.json::<Value>().await.unwrap()["job_id"].as_str().unwrap().to_string()
+    }
+
+    // Fire 5 concurrent requests.
+    let mut handles = Vec::new();
+    for _ in 0..5 {
+        let c = client.clone();
+        let b = base.clone();
+        handles.push(tokio::spawn(async move { one_round(&c, &b).await }));
+    }
+    let mut ids = Vec::new();
+    for h in handles {
+        ids.push(h.await.unwrap());
+    }
+    let unique: std::collections::HashSet<_> = ids.iter().collect();
+    assert_eq!(unique.len(), 5, "expected 5 unique job_ids, got {:?}", ids);
+    let _ = m; // silence unused
+}
+
+#[tokio::test]
+async fn unknown_exchange_returns_400() {
+    let (base, _m) = spawn_app().await;
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{base}/v1/quote"))
+        .json(&json!({
+            "exchange": "kraken",  // not in allowed list
+            "pairs": ["BTC/USDT"],
+            "timeframes": ["1m"],
+            "timerange": "20230101-"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test]
+async fn unsupported_timeframe_returns_400() {
+    let (base, _m) = spawn_app().await;
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{base}/v1/quote"))
+        .json(&json!({
+            "exchange": "binance",
+            "pairs": ["BTC/USDT"],
+            "timeframes": ["7m"],  // not in allowed list
+            "timerange": "20230101-"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test]
+async fn empty_pairs_returns_400() {
+    let (base, _m) = spawn_app().await;
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{base}/v1/quote"))
+        .json(&json!({
+            "exchange": "binance",
+            "pairs": [],
+            "timeframes": ["1m"],
+            "timerange": "20230101-"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test]
+async fn info_endpoint_lists_all_five_routes() {
+    let (base, _m) = spawn_app().await;
+    let resp = reqwest::get(format!("{base}/v1/info")).await.unwrap();
+    let v: Value = resp.json().await.unwrap();
+    let endpoints: Vec<String> = v["endpoints"].as_array().unwrap().iter()
+        .map(|e| e.as_str().unwrap().to_string())
+        .collect();
+    // After settlement addition we now have 5 routes.
+    assert!(endpoints.len() >= 5);
+    assert!(endpoints.iter().any(|e| e.contains("/v1/quote")));
+    assert!(endpoints.iter().any(|e| e.contains("/v1/download")));
+    assert!(endpoints.iter().any(|e| e.contains("/v1/jobs")));
+    assert!(endpoints.iter().any(|e| e.contains("/v1/info")));
+    assert!(endpoints.iter().any(|e| e.contains("/v1/reconcile")));
+}
