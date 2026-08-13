@@ -23,10 +23,12 @@
 //! against `MockFacilitator` today and swap in a real facilitator later
 //! without touching route handlers.
 
+pub mod cloudflare;
 pub mod mock;
 pub mod types;
 pub mod verifier;
 
+pub use cloudflare::CloudflareFacilitator;
 pub use mock::MockFacilitator;
 pub use types::{
     Asset, Network, PaymentProof, PaymentRequired, Scheme, UnixSecs, VerificationError,
