@@ -107,3 +107,132 @@ impl PriceQuote {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- Timeframe ----
+
+    #[test]
+    fn timeframe_multiplier_table_matches_design() {
+        // Pin the §3.1 multiplier table as a closed-loop test.
+        assert_eq!(Timeframe::M1.multiplier(), 1.0);
+        assert_eq!(Timeframe::M5.multiplier(), 0.6);
+        assert_eq!(Timeframe::M15.multiplier(), 0.4);
+        assert_eq!(Timeframe::H1.multiplier(), 0.25);
+        assert_eq!(Timeframe::H4.multiplier(), 0.15);
+        assert_eq!(Timeframe::D1.multiplier(), 0.05);
+    }
+
+    #[test]
+    fn timeframe_serde_roundtrip_lowercase() {
+        for tf in [
+            Timeframe::M1,
+            Timeframe::M5,
+            Timeframe::M15,
+            Timeframe::H1,
+            Timeframe::H4,
+            Timeframe::D1,
+        ] {
+            let s = serde_json::to_string(&tf).unwrap();
+            let back: Timeframe = serde_json::from_str(&s).unwrap();
+            assert_eq!(back, tf);
+        }
+    }
+
+    #[test]
+    fn timeframe_serde_uses_canonical_names() {
+        assert_eq!(serde_json::to_string(&Timeframe::M1).unwrap(), "\"1m\"");
+        assert_eq!(serde_json::to_string(&Timeframe::M5).unwrap(), "\"5m\"");
+        assert_eq!(serde_json::to_string(&Timeframe::M15).unwrap(), "\"15m\"");
+        assert_eq!(serde_json::to_string(&Timeframe::H1).unwrap(), "\"1h\"");
+        assert_eq!(serde_json::to_string(&Timeframe::H4).unwrap(), "\"4h\"");
+        assert_eq!(serde_json::to_string(&Timeframe::D1).unwrap(), "\"1d\"");
+    }
+
+    // ---- Market ----
+
+    #[test]
+    fn market_multiplier_table_matches_design() {
+        assert_eq!(Market::Spot.multiplier(), 1.0);
+        assert_eq!(Market::Futures.multiplier(), 1.2);
+    }
+
+    #[test]
+    fn market_serde_roundtrip_lowercase() {
+        for m in [Market::Spot, Market::Futures] {
+            let s = serde_json::to_string(&m).unwrap();
+            let back: Market = serde_json::from_str(&s).unwrap();
+            assert_eq!(back, m);
+        }
+    }
+
+    // ---- PriceQuote::to_x402_string ----
+
+    #[test]
+    fn x402_string_format_zero_padded() {
+        let q = PriceQuote {
+            breakdown: PriceBreakdown {
+                base_fee_usdc: 0,
+                rows_fee_usdc: 0,
+                pair_premium_usdc: 0,
+                compute_bonus_usdc: 0,
+                free_tier_discount_usdc: 0,
+            },
+            total_usdc_minor: 1, // smallest non-zero
+        };
+        assert_eq!(q.to_x402_string(), "0.000001");
+    }
+
+    #[test]
+    fn x402_string_format_no_scientific_for_large() {
+        let q = PriceQuote {
+            breakdown: PriceBreakdown {
+                base_fee_usdc: 0,
+                rows_fee_usdc: 0,
+                pair_premium_usdc: 0,
+                compute_bonus_usdc: 0,
+                free_tier_discount_usdc: 0,
+            },
+            total_usdc_minor: 100_000_000, // $100
+        };
+        assert_eq!(q.to_x402_string(), "100.000000");
+    }
+
+    #[test]
+    fn x402_string_format_one_dollar() {
+        let q = PriceQuote {
+            breakdown: PriceBreakdown {
+                base_fee_usdc: 0,
+                rows_fee_usdc: 0,
+                pair_premium_usdc: 0,
+                compute_bonus_usdc: 0,
+                free_tier_discount_usdc: 0,
+            },
+            total_usdc_minor: 1_000_000,
+        };
+        assert_eq!(q.to_x402_string(), "1.000000");
+    }
+
+    // ---- PricingRequest ----
+
+    #[test]
+    fn pricing_request_constructs_with_all_fields() {
+        let r = PricingRequest {
+            rows: 100,
+            pairs_count: 2,
+            timeframe: Timeframe::H1,
+            market: Market::Futures,
+            free_tier_discount_usdc: 50,
+            compute_bonus_usdc: 25,
+        };
+        assert_eq!(r.rows, 100);
+        assert_eq!(r.pairs_count, 2);
+        assert_eq!(r.timeframe, Timeframe::H1);
+        assert_eq!(r.market, Market::Futures);
+        assert_eq!(r.free_tier_discount_usdc, 50);
+        assert_eq!(r.compute_bonus_usdc, 25);
+    }
+}
+

@@ -92,3 +92,97 @@ pub fn price_quote(req: &PricingRequest) -> Result<PriceQuote, PricingError> {
         total_usdc_minor,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Market, Timeframe};
+
+    fn r(rows: u64, pairs: usize, tf: Timeframe, mkt: Market) -> PricingRequest {
+        PricingRequest {
+            rows,
+            pairs_count: pairs,
+            timeframe: tf,
+            market: mkt,
+            free_tier_discount_usdc: 0,
+            compute_bonus_usdc: 0,
+        }
+    }
+
+    // Direct unit coverage of the formula's invariants. Integration tests in
+    // tests/examples.rs cover the design-doc worked examples end-to-end.
+
+    #[test]
+    fn base_fee_is_minimum_charge_even_at_zero_rows() {
+        let q = price_quote(&r(0, 1, Timeframe::M1, Market::Spot)).unwrap();
+        assert_eq!(q.total_usdc_minor, BASE_FEE_USDC);
+    }
+
+    #[test]
+    fn pair_premium_increments_per_extra_pair() {
+        let q1 = price_quote(&r(0, 1, Timeframe::M1, Market::Spot)).unwrap();
+        let q2 = price_quote(&r(0, 2, Timeframe::M1, Market::Spot)).unwrap();
+        let q5 = price_quote(&r(0, 5, Timeframe::M1, Market::Spot)).unwrap();
+        assert_eq!(q2.total_usdc_minor - q1.total_usdc_minor, PAIR_PREMIUM_USDC);
+        assert_eq!(q5.total_usdc_minor - q1.total_usdc_minor, 4 * PAIR_PREMIUM_USDC);
+    }
+
+    #[test]
+    fn rows_fee_scales_linearly_with_rows() {
+        let a = price_quote(&r(100_000, 1, Timeframe::M1, Market::Spot)).unwrap();
+        let b = price_quote(&r(200_000, 1, Timeframe::M1, Market::Spot)).unwrap();
+        // Doubling rows should double rows_fee (with at most 1 micro-USDC rounding).
+        let expected = 2 * a.breakdown.rows_fee_usdc;
+        let diff = b.breakdown.rows_fee_usdc.abs_diff(expected);
+        assert!(diff <= 1, "rows_fee should scale linearly, got diff={}", diff);
+    }
+
+    #[test]
+    fn saturating_sub_keeps_total_non_negative() {
+        let req = PricingRequest {
+            rows: 0,
+            pairs_count: 1,
+            timeframe: Timeframe::M1,
+            market: Market::Spot,
+            free_tier_discount_usdc: u64::MAX,
+            compute_bonus_usdc: 0,
+        };
+        let q = price_quote(&req).unwrap();
+        assert_eq!(q.total_usdc_minor, 0);
+    }
+
+    #[test]
+    fn compute_bonus_adds_directly_to_total() {
+        let baseline = price_quote(&r(0, 1, Timeframe::M1, Market::Spot)).unwrap();
+        let with_bonus = price_quote(&PricingRequest {
+            rows: 0,
+            pairs_count: 1,
+            timeframe: Timeframe::M1,
+            market: Market::Spot,
+            free_tier_discount_usdc: 0,
+            compute_bonus_usdc: 7_777,
+        })
+        .unwrap();
+        assert_eq!(
+            with_bonus.total_usdc_minor - baseline.total_usdc_minor,
+            7_777
+        );
+    }
+
+    #[test]
+    fn internal_overflow_unreachable_for_realistic_rows() {
+        // Sanity: even u64::MAX rows should not overflow the internal u128 step.
+        // (We test that it doesn't error, not that it returns a specific value.)
+        let req = PricingRequest {
+            rows: u64::MAX,
+            pairs_count: 1,
+            timeframe: Timeframe::M1,
+            market: Market::Spot,
+            free_tier_discount_usdc: 0,
+            compute_bonus_usdc: 0,
+        };
+        let q = price_quote(&req);
+        assert!(q.is_ok(), "u64::MAX rows should not overflow");
+    }
+}
+
