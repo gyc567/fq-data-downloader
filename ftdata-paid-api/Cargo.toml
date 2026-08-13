@@ -25,6 +25,12 @@ uuid = { workspace = true }
 blake3 = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+
+[[bin]]
+name = "ftdata-paid-server"
+path = "src/bin/server.rs"
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["json"] }
