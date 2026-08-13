@@ -18,7 +18,6 @@ use ftdata_paid_facilitator::{PaymentProof, PaymentVerifier, UnixSecs, Verificat
 use crate::error::{ApiError, ApiResult};
 use crate::jobs::{new_job_id, Job, JobResult, JobStatus};
 use crate::origin::OriginRequest;
-use crate::receipt::Receipt;
 use crate::routes::quote::{validate as validate_quote, QuoteRequest};
 use crate::state::AppState;
 
