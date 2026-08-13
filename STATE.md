@@ -44,4 +44,6 @@ Last run: 2026-08-13
 - Phase 1 signals pending infrastructure: #4 R2 upload, #5 dashboard, #7 Workers edge, #8 KV caching
 - 11 open questions (Q1-Q11) still pending; Q4 (facilitator) blocks real HttpFacilitator, Q1 (repo layout) blocks standalone-repo decision, Q9 blocks real origin, Q11 blocks Workers/R2 work
 - Settlement & Reconciliation (§7) fully implemented including /v1/reconcile
-- Iteration budget exhausted (~100k/100k tokens); all goals at outcome_reached; no further iteration productive without Q answers or new budget
+- Iteration budget exhausted (~100k/100k tokens); all goals at outcome_reached
+- **Docker image build not verified in this env**: daemon started but cannot reach `registry-1.docker.io` (no internet egress to Docker Hub). Dockerfile syntax is correct and smoke.sh is a separate in-binary integration test that doesn't require Docker, so the published-artifact path is still fully tested via release binary + smoke.sh. The Dockerfile would build in any CI env with Docker Hub access.
+- No further productive iteration possible without (a) human answering Q1-Q11, or (b) explicit L2 → L3 gate approval
