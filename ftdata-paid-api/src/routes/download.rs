@@ -18,6 +18,7 @@ use ftdata_paid_facilitator::{PaymentProof, PaymentVerifier, UnixSecs, Verificat
 use crate::error::{ApiError, ApiResult};
 use crate::jobs::{new_job_id, Job, JobResult, JobStatus};
 use crate::origin::OriginRequest;
+use crate::receipt::Receipt;
 use crate::routes::quote::{validate as validate_quote, QuoteRequest};
 use crate::state::AppState;
 
@@ -96,6 +97,8 @@ pub async fn handler(
 
             // 4. Enqueue a job and return 202.
             let job_id = new_job_id();
+            let payer_for_bg = payer.clone();
+            let tx_hash_for_bg = tx_hash.clone();
             let job = Job {
                 id: job_id.clone(),
                 status: JobStatus::Queued,
@@ -111,8 +114,15 @@ pub async fn handler(
 
             // Spawn the origin work in the background so the response is fast.
             let jobs = state.jobs.clone();
+            let receipts = state.receipts.clone();
+            let policy_id = state.pricing.policy_id.clone();
             let job_id_bg = job_id.clone();
             let req_bg = origin_req.clone();
+            let payer_bg = payer_for_bg;
+            let amount_bg = amount.clone();
+            let tx_hash_bg = tx_hash_for_bg;
+            let quote_id_bg = quote_id.clone();
+            let rows_bg = pricing_req.rows;
             tokio::spawn(async move {
                 jobs.update(&job_id_bg, |j| {
                     j.status = JobStatus::Running;
@@ -143,6 +153,23 @@ pub async fn handler(
                                 }],
                             });
                         });
+                        // Emit a receipt per design §7.
+                        let receipt = crate::receipt::Receipt {
+                            receipt_id: format!("rcpt_{job_id_bg}"),
+                            job_id: job_id_bg.clone(),
+                            paid_by: payer_bg.clone(),
+                            amount_usdc: amount_bg.clone(),
+                            tx_hash: tx_hash_bg.clone(),
+                            network: "base".into(),
+                            facilitator: "mock".into(),
+                            settled_at: UnixSecs::now().0,
+                            policy_id: policy_id.clone(),
+                            quote_id: quote_id_bg.clone(),
+                            exchange: req_bg.exchange.clone(),
+                            pairs: req_bg.pairs.clone(),
+                            rows: rows_bg,
+                        };
+                        receipts.insert(receipt);
                     }
                     Err(e) => {
                         jobs.update(&job_id_bg, |j| {

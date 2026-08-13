@@ -28,9 +28,11 @@
 pub mod error;
 pub mod jobs;
 pub mod origin;
+pub mod receipt;
 pub mod routes;
 pub mod state;
 
 pub use error::ApiError;
 pub use jobs::{Job, JobStatus};
+pub use receipt::{Receipt, ReceiptStore, ReconciliationReport};
 pub use state::AppState;

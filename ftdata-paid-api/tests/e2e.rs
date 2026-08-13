@@ -266,3 +266,99 @@ async fn bad_request_body_returns_400() {
     let v: Value = resp.json().await.unwrap();
     assert_eq!(v["error"], "bad_request");
 }
+
+#[tokio::test]
+async fn reconcile_with_no_receipts_returns_zeros() {
+    let (base, _m) = spawn_app().await;
+    let resp = reqwest::get(format!(
+        "{base}/v1/reconcile?since=0&until=9999999999"
+    ))
+    .await
+    .unwrap();
+    assert_eq!(resp.status(), 200);
+    let v: Value = resp.json().await.unwrap();
+    assert_eq!(v["jobs_completed"], 0);
+    assert_eq!(v["revenue_total_usdc"], "0.000000");
+    assert_eq!(v["net_revenue_usdc"], "0.000000");
+}
+
+#[tokio::test]
+async fn completed_download_emits_receipt_aggregated_by_reconcile() {
+    let (base, m) = spawn_app().await;
+    let client = reqwest::Client::new();
+
+    // 1. First request: 402 with challenge.
+    let r1 = client
+        .post(format!("{base}/v1/download"))
+        .json(&sample_body())
+        .send()
+        .await
+        .unwrap();
+    let challenge: Value = r1.json::<Value>().await.unwrap()["payment_required"].clone();
+
+    // 2. Build a valid proof.
+    let proof = PaymentProof {
+        scheme: Scheme::Exact,
+        network: Network::Base,
+        asset: Asset::Usdc,
+        payer: "0xAGENT".into(),
+        amount: challenge["max_amount"].as_str().unwrap().to_string(),
+        quote_id: challenge["quote_id"].as_str().unwrap().to_string(),
+        signature: "0xMOCK_SIG".into(),
+        nonce: "n1".into(),
+        valid_until: UnixSecs::now(),
+    };
+    let proof_json = serde_json::to_string(&proof).unwrap();
+
+    // 3. Submit with X-PAYMENT.
+    let r2 = client
+        .post(format!("{base}/v1/download"))
+        .header("x-payment", &proof_json)
+        .json(&sample_body())
+        .send()
+        .await
+        .unwrap();
+    let v: Value = r2.json().await.unwrap();
+    let job_id = v["job_id"].as_str().unwrap().to_string();
+    let amount = v["amount_paid_usdc"].as_str().unwrap().to_string();
+    assert_eq!(v["payment_settled"], true);
+    assert_eq!(m.facilitator_id(), "mock");
+
+    // 4. Poll until completed.
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let r3 = client
+            .get(format!("{base}/v1/jobs/{job_id}"))
+            .send()
+            .await
+            .unwrap();
+        let j: Value = r3.json().await.unwrap();
+        if j["status"].as_str() == Some("completed") {
+            break;
+        }
+    }
+
+    // 5. Reconcile should now report one completed job with revenue.
+    let resp = reqwest::get(format!(
+        "{base}/v1/reconcile?since=0&until=9999999999"
+    ))
+    .await
+    .unwrap();
+    assert_eq!(resp.status(), 200);
+    let report: Value = resp.json().await.unwrap();
+    assert_eq!(report["jobs_completed"], 1);
+    assert_eq!(report["revenue_total_usdc"].as_str().unwrap(), amount);
+    // 1% fee
+    let gross: f64 = amount.parse().unwrap();
+    let fee = gross * 0.01;
+    let net = gross - fee;
+    assert!(
+        (report["net_revenue_usdc"].as_str().unwrap().parse::<f64>().unwrap() - net).abs()
+            < 0.000_001
+    );
+    // by_exchange aggregates
+    assert_eq!(
+        report["by_exchange"]["binance"].as_str().unwrap(),
+        amount
+    );
+}
