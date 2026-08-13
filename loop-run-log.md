@@ -21,6 +21,17 @@ Append one entry per run. Prune entries older than 30 days.
 
 <!-- Loop appends below this line -->
 {
+  "run_id": "2026-08-13T06:43:35Z",
+  "pattern": "feature-implement",
+  "duration_s": 600,
+  "items_found": 1,
+  "actions_taken": 1,
+  "escalations": 0,
+  "tokens_estimate": 10000,
+  "outcome": "fix-proposed",
+  "notes": "Added scripts/smoke.sh (commit dd5d886): human-runnable bash end-to-end smoke test. Boots the server, hits all 5 routes with curl + jq, asserts status codes and key fields, polls job to completed, verifies reconcile >= 1 job, cleans up. Initial bug found and fixed (jq was reading empty stdin because I forgot to pass the JSON file as 4th arg to assert_jq). Now 7/7 assertions pass against debug binary in <1s of work. This is a CI-runnable integration test that does not require cargo test."
+}
+{
   "run_id": "2026-08-13T04:48:00Z",
   "pattern": "feature-implement",
   "duration_s": 900,
