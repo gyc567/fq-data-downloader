@@ -7,6 +7,7 @@ use ftdata_paid_pricing::{Market, PricingRequest, Timeframe};
 
 use crate::auth::ApiKeyStore;
 use crate::jobs::JobStore;
+use crate::rate_limit::{RateLimiter, RateLimits};
 use crate::receipt::ReceiptStore;
 
 /// Configuration for the pricing layer. Holds defaults so the API can answer
@@ -35,6 +36,7 @@ pub struct AppState {
     pub receipts: ReceiptStore,
     pub pricing: PricingConfig,
     pub api_keys: ApiKeyStore,
+    pub rate_limiter: RateLimiter,
 }
 
 impl AppState {
@@ -45,6 +47,7 @@ impl AppState {
             receipts: ReceiptStore::new(),
             pricing: PricingConfig::default(),
             api_keys: ApiKeyStore::new(),
+            rate_limiter: RateLimiter::new(RateLimits::default()),
         }
     }
 
