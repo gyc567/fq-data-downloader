@@ -5,6 +5,7 @@ use std::sync::Arc;
 use ftdata_paid_facilitator::PaymentVerifier;
 use ftdata_paid_pricing::{Market, PricingRequest, Timeframe};
 
+use crate::auth::ApiKeyStore;
 use crate::jobs::JobStore;
 use crate::receipt::ReceiptStore;
 
@@ -33,6 +34,7 @@ pub struct AppState {
     pub jobs: JobStore,
     pub receipts: ReceiptStore,
     pub pricing: PricingConfig,
+    pub api_keys: ApiKeyStore,
 }
 
 impl AppState {
@@ -42,6 +44,7 @@ impl AppState {
             jobs: JobStore::new(),
             receipts: ReceiptStore::new(),
             pricing: PricingConfig::default(),
+            api_keys: ApiKeyStore::new(),
         }
     }
 

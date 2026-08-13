@@ -86,10 +86,12 @@ pub fn validate(req: &QuoteRequest) -> ApiResult<()> {
     if req.timeframes.is_empty() {
         return Err(ApiError::BadRequest("timeframes must not be empty".into()));
     }
-    let known_exchanges = ["binance", "bybit", "okx"];
-    if !known_exchanges.contains(&req.exchange.as_str()) {
+    // Q2: Launch is Binance-only. bybit + okx are reserved for future expansion
+    // (tracked in DECISIONS.md); reject them at the API edge so agents get
+    // a clear 400 instead of a 200 with a fake job.
+    if req.exchange != "binance" {
         return Err(ApiError::BadRequest(format!(
-            "unsupported exchange: {}",
+            "launch is Binance-only; '{}' is not yet supported",
             req.exchange
         )));
     }

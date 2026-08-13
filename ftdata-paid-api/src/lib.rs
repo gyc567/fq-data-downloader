@@ -25,6 +25,7 @@
 //! 5. On success, server enqueues a job and returns `202 Accepted` with
 //!    `poll_url`. On failure, returns `402` with the verification error.
 
+pub mod auth;
 pub mod error;
 pub mod jobs;
 pub mod origin;
@@ -32,6 +33,7 @@ pub mod receipt;
 pub mod routes;
 pub mod state;
 
+pub use auth::{ApiKeyStore, AuthMethod, CallerIdentity};
 pub use error::ApiError;
 pub use jobs::{Job, JobStatus};
 pub use receipt::{Receipt, ReceiptStore, ReconciliationReport};

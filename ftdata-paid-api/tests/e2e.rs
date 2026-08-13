@@ -364,26 +364,44 @@ async fn completed_download_emits_receipt_aggregated_by_reconcile() {
 }
 
 #[tokio::test]
-async fn quote_works_for_all_supported_exchanges() {
+async fn quote_works_for_binance_only_per_q2() {
+    // Q2: launch is Binance-only.
     let (base, _m) = spawn_app().await;
     let client = reqwest::Client::new();
-    for exchange in ["binance", "bybit", "okx"] {
+    let resp = client
+        .post(format!("{base}/v1/quote"))
+        .json(&json!({
+            "exchange": "binance",
+            "pairs": ["BTC/USDT"],
+            "timeframes": ["1m"],
+            "timerange": "20230101-20230108",
+            "market": "spot"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+}
+
+#[tokio::test]
+async fn quote_rejects_bybit_and_okx_per_q2() {
+    let (base, _m) = spawn_app().await;
+    let client = reqwest::Client::new();
+    for exchange in ["bybit", "okx"] {
         let resp = client
             .post(format!("{base}/v1/quote"))
             .json(&json!({
                 "exchange": exchange,
                 "pairs": ["BTC/USDT"],
                 "timeframes": ["1m"],
-                "timerange": "20230101-20230108",
-                "market": "spot"
+                "timerange": "20230101-20230108"
             }))
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), 200, "exchange {exchange} should quote");
+        assert_eq!(resp.status(), 400, "{} should be rejected", exchange);
         let v: Value = resp.json().await.unwrap();
-        assert!(v["quote_id"].is_string());
-        assert!(v["price_usdc"].as_str().unwrap().parse::<f64>().unwrap() > 0.0);
+        assert!(v["message"].as_str().unwrap().contains("Binance-only"));
     }
 }
 
