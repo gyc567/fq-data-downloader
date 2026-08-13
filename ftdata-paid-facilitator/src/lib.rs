@@ -32,4 +32,4 @@ pub use types::{
     Asset, Network, PaymentProof, PaymentRequired, Scheme, UnixSecs, VerificationError,
     VerificationResult,
 };
-pub use verifier::PaymentVerifier;
+pub use verifier::{default_challenge, format_minor, PaymentVerifier};

@@ -9,6 +9,7 @@ members = [
     "ftdata-analysis",
     "ftdata-paid-pricing",
     "ftdata-paid-facilitator",
+    "ftdata-paid-api",
 ]
 
 [workspace.package]
@@ -43,3 +44,11 @@ once_cell = "1.19"
 parking_lot = "0.12"
 zip = "2.2"
 flate2 = "1.0"
+
+# x402 paid layer
+axum = { version = "0.7", features = ["macros"] }
+tower = { version = "0.5", features = ["util"] }
+http = "1"
+http-body-util = "0.1"
+dashmap = "6"
+uuid = { version = "1.10", features = ["v4"] }
