@@ -21,6 +21,17 @@ Append one entry per run. Prune entries older than 30 days.
 
 <!-- Loop appends below this line -->
 {
+  "run_id": "2026-08-13T07:54:30Z",
+  "pattern": "decision-execution",
+  "duration_s": 600,
+  "items_found": 1,
+  "actions_taken": 1,
+  "escalations": 0,
+  "tokens_estimate": 10000,
+  "outcome": "fix-proposed",
+  "notes": "Q1 standalone repo extraction: scripts/extract-standalone.sh (commit 6e2a5bb). Tested end-to-end at /tmp/fq-data-paid-test: cargo build clean (2 pre-existing warnings), 98 cargo tests pass, scripts/smoke.sh 9/9 assertions pass against extracted binary. The script: (1) verifies feat/paid-mvp source, (2) uses git archive to extract HEAD, (3) filters to paid surface only, (4) rewrites root Cargo.toml with Commercial license + new repo URL, (5) creates a fresh initial commit, (6) prints the exact push command. L3 gate respected: script does NOT push; the operator runs the push manually after L3 approval. Also fixed scripts/smoke.sh to pass ?wallet= for the Q10 customer reconcile (commit f104696) — without this the extracted repo's smoke would fail."
+}
+{
   "run_id": "2026-08-13T07:50:10Z",
   "pattern": "decision-execution",
   "duration_s": 1500,
