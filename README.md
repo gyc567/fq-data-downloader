@@ -125,11 +125,27 @@ docker run --rm -p 8080:8080 ftdata-paid-server
 ## TS Agent client
 
 ```bash
-# Requires a running ftdata-paid-server and node + tsx:
-npx tsx ftdata-paid-api/examples/agent-client.ts
+# Requires a running ftdata-paid-server and node 22+ (TypeScript stripping):
+node --experimental-strip-types ftdata-paid-api/examples/agent-client.ts
 ```
 
+The `--experimental-strip-types` flag uses Node 22's native TypeScript support — no transpiler needed. If you have tsx installed you can also use `npx tsx ftdata-paid-api/examples/agent-client.ts`.
+
 See [`ftdata-paid-api/examples/agent-client.ts`](ftdata-paid-api/examples/agent-client.ts) for the reference implementation. Replace the mock `signPaymentProof` with viem/ethers for production.
+
+### Verified end-to-end
+
+```text
+[1/4] requesting challenge...
+       quote_id=cc0977f142074745979b375e9da2a2f6 amount=0.010446
+[2/4] signing payment proof...
+[3/4] submitting with X-PAYMENT...
+       job_id=job_49bc3e28b67b4f7c837d53772621e0a6 amount=0.010446
+[4/4] polling job until completed...
+       status=completed progress=1
+       file=BTC/USDT.feather bytes=31
+       download_url=https://r2.example.com/signed/job_49bc3e28b67b4f7c837d53772621e0a6?expires=...
+```
 
 ## Tests
 
