@@ -30,6 +30,9 @@ pub struct Receipt {
     pub exchange: String,
     pub pairs: Vec<String>,
     pub rows: u64,
+    /// Q7: whether the downloaded data was processed through the cleaning
+    /// pipeline (dedup, gap-fill, sort) before being handed to the agent.
+    pub cleaned: bool,
 }
 
 /// In-memory receipt store. Thread-safe; safe to share via `Clone`.
@@ -173,6 +176,7 @@ mod tests {
             exchange: exchange.into(),
             pairs: vec!["BTC/USDT".into()],
             rows: 525_600,
+            cleaned: false,
         }
     }
 

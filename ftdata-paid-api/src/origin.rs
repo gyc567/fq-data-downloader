@@ -20,6 +20,9 @@ pub struct OriginRequest {
     pub timerange: String,
     pub format: String,
     pub market: String,
+    /// Q7: when true, run the data through the cleaning pipeline
+    /// (dedup, gap-fill, sort) before handing the file to the agent.
+    pub cleaned: bool,
 }
 
 impl OriginRequest {
@@ -90,10 +93,16 @@ pub async fn run(req: &OriginRequest) -> ApiResult<PathBuf> {
     let _quote = ftdata_paid_pricing::price_quote(&pricing_req)
         .map_err(|e| ApiError::Internal(format!("pricing failed: {e}")))?;
 
+    // Q7: cleaning pipeline placeholder. Real impl in Q9 (direct core calls)
+    // will do dedup + sort + gap-fill. For the stub, we just record the flag
+    // in the file name so the agent can tell the difference.
+    let suffix = if req.cleaned { ".cleaned" } else { ".raw" };
+
     // Synthetic content: write a small file with a stable hash.
     let tmp = std::env::temp_dir().join(format!(
-        "ftdata-paid-origin-{}.bin",
-        blake3_like_hash(&format!("{:?}", req))
+        "ftdata-paid-origin-{}{}.bin",
+        blake3_like_hash(&format!("{:?}", req)),
+        suffix
     ));
     tokio::fs::write(&tmp, b"ftdata-paid stub origin output\n")
         .await
@@ -141,6 +150,7 @@ mod tests {
             timerange: "20230101-20240601".into(),
             format: "feather".into(),
             market: "spot".into(),
+            cleaned: false,
         }
     }
 
@@ -175,5 +185,22 @@ mod tests {
         assert_eq!(r.to_pricing_request().market, ftdata_paid_pricing::Market::Futures);
         r.market = "spot".into();
         assert_eq!(r.to_pricing_request().market, ftdata_paid_pricing::Market::Spot);
+    }
+
+    #[test]
+    fn cleaning_flag_propagates_to_filename() {
+        // Use the tokio runtime to run the async origin synchronously.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut r = sample_req();
+        r.cleaned = false;
+        let path_raw = rt.block_on(run(&r)).unwrap();
+        assert!(path_raw.to_string_lossy().contains(".raw"));
+
+        r.cleaned = true;
+        let path_clean = rt.block_on(run(&r)).unwrap();
+        assert!(path_clean.to_string_lossy().contains(".cleaned"));
     }
 }

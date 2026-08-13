@@ -269,9 +269,10 @@ async fn bad_request_body_returns_400() {
 
 #[tokio::test]
 async fn reconcile_with_no_receipts_returns_zeros() {
+    // Q10: reconcile is now auth-required. Use ?wallet= for the customer view.
     let (base, _m) = spawn_app().await;
     let resp = reqwest::get(format!(
-        "{base}/v1/reconcile?since=0&until=9999999999"
+        "{base}/v1/reconcile?since=0&until=9999999999&wallet=0xTEST"
     ))
     .await
     .unwrap();
@@ -280,6 +281,19 @@ async fn reconcile_with_no_receipts_returns_zeros() {
     assert_eq!(v["jobs_completed"], 0);
     assert_eq!(v["revenue_total_usdc"], "0.000000");
     assert_eq!(v["net_revenue_usdc"], "0.000000");
+}
+
+#[tokio::test]
+async fn reconcile_without_auth_returns_402() {
+    // Q10: unauthenticated reconcile must fail. Use 402 since auth is
+    // payment-shaped for now (x402 / API key as a "proof of who you are").
+    let (base, _m) = spawn_app().await;
+    let resp = reqwest::get(format!("{base}/v1/reconcile?since=0&until=9999999999"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 402);
+    let v: Value = resp.json().await.unwrap();
+    assert_eq!(v["error"], "payment_invalid");
 }
 
 #[tokio::test]
@@ -296,12 +310,13 @@ async fn completed_download_emits_receipt_aggregated_by_reconcile() {
         .unwrap();
     let challenge: Value = r1.json::<Value>().await.unwrap()["payment_required"].clone();
 
-    // 2. Build a valid proof.
+    // 2. Build a valid proof with payer "0xRECON_AGENT".
+    let payer = "0xRECON_AGENT".to_string();
     let proof = PaymentProof {
         scheme: Scheme::Exact,
         network: Network::Base,
         asset: Asset::Usdc,
-        payer: "0xAGENT".into(),
+        payer: payer.clone(),
         amount: challenge["max_amount"].as_str().unwrap().to_string(),
         quote_id: challenge["quote_id"].as_str().unwrap().to_string(),
         signature: "0xMOCK_SIG".into(),
@@ -338,9 +353,9 @@ async fn completed_download_emits_receipt_aggregated_by_reconcile() {
         }
     }
 
-    // 5. Reconcile should now report one completed job with revenue.
+    // 5. Customer view: pass ?wallet=0xRECON_AGENT to see this customer's receipts.
     let resp = reqwest::get(format!(
-        "{base}/v1/reconcile?since=0&until=9999999999"
+        "{base}/v1/reconcile?since=0&until=9999999999&wallet=0xRECON_AGENT"
     ))
     .await
     .unwrap();

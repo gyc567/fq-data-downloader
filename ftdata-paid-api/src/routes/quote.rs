@@ -47,6 +47,9 @@ pub async fn handler(
         timerange: req.timerange.clone(),
         format: req.format.clone().unwrap_or_else(|| "feather".into()),
         market: req.market.clone().unwrap_or_else(|| "spot".into()),
+        // Q7: quote doesn't run the origin yet; default to false. The
+        // download handler picks up the user-supplied `clean` flag.
+        cleaned: false,
     };
 
     let pricing_req = origin_req.to_pricing_request();

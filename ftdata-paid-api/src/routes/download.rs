@@ -31,6 +31,11 @@ pub struct DownloadBody {
     pub format: Option<String>,
     #[serde(default)]
     pub market: Option<String>,
+    /// Q7: when true, run the data through the cleaning pipeline before
+    /// returning. Adds a `cleaned: true` field to the receipt and uses
+    /// a `.cleaned` suffix on the output file. Default: false.
+    #[serde(default)]
+    pub clean: bool,
 }
 
 pub async fn handler(
@@ -56,6 +61,7 @@ pub async fn handler(
         timerange: body.timerange.clone(),
         format: body.format.clone().unwrap_or_else(|| "feather".into()),
         market: body.market.clone().unwrap_or_else(|| "spot".into()),
+        cleaned: body.clean,
     };
     let pricing_req = origin_req.to_pricing_request();
     let quote = ftdata_paid_pricing::price_quote(&pricing_req)
@@ -167,6 +173,7 @@ pub async fn handler(
                             exchange: req_bg.exchange.clone(),
                             pairs: req_bg.pairs.clone(),
                             rows: rows_bg,
+                            cleaned: req_bg.cleaned,
                         };
                         receipts.insert(receipt);
                     }
