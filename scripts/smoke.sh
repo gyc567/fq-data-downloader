@@ -139,10 +139,18 @@ done
 assert_jq '.status' "completed" "/v1/jobs final status" /tmp/job.json
 
 # 6. /v1/reconcile → 200 with at least 1 completed job
+# Q10: customer-facing reconcile is auth-required. Use ?wallet= to scope
+# to the wallet that paid for the download above.
 blue "[test] /v1/reconcile"
-status="$(curl -s -o /tmp/recon.json -w '%{http_code}' "$BASE/v1/reconcile?since=0&until=9999999999")"
+status="$(curl -s -o /tmp/recon.json -w '%{http_code}' "$BASE/v1/reconcile?since=0&until=9999999999&wallet=0xSMOKE")"
 assert_status "$status" "200" "/v1/reconcile"
 assert_jq '.jobs_completed >= 1' "true" "/v1/reconcile jobs_completed >= 1" /tmp/recon.json
+
+# 6b. Unauthenticated /v1/reconcile → 402 (Q10)
+blue "[test] /v1/reconcile without auth (expect 402)"
+status="$(curl -s -o /tmp/recon_unauth.json -w '%{http_code}' "$BASE/v1/reconcile?since=0&until=9999999999")"
+assert_status "$status" "402" "/v1/reconcile unauth"
+assert_jq '.error' "payment_invalid" "/v1/reconcile unauth error code" /tmp/recon_unauth.json
 
 # 7. Bad request → 400
 blue "[test] /v1/quote bad exchange (expect 400)"
