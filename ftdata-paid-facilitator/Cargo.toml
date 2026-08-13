@@ -1,0 +1,19 @@
+[package]
+name = "ftdata-paid-facilitator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "x402 payment facilitator abstraction for ftdata-paid. Trait + mock impl; real facilitator client pending Q4 (Cloudflare / Coinbase / self-hosted)."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

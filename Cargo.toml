@@ -8,6 +8,7 @@ members = [
     "ftdata-storage",
     "ftdata-analysis",
     "ftdata-paid-pricing",
+    "ftdata-paid-facilitator",
 ]
 
 [workspace.package]
