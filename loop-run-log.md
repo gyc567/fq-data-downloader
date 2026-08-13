@@ -21,6 +21,17 @@ Append one entry per run. Prune entries older than 30 days.
 
 <!-- Loop appends below this line -->
 {
+  "run_id": "2026-08-13T04:43:10Z",
+  "pattern": "feature-implement",
+  "duration_s": 1500,
+  "items_found": 2,
+  "actions_taken": 2,
+  "escalations": 0,
+  "tokens_estimate": 18000,
+  "outcome": "fix-proposed",
+  "notes": "L2 settlement + TS agent + README (commits 03383d5, c6f28df). Added Receipt model with 13 fields per design §7.1, ReceiptStore with range filtering, ReconciliationReport aggregator (revenue/fees/net/by_exchange/by_policy). /v1/reconcile?since&until endpoint. Download handler now emits Receipt on job completion (background tokio::spawn). 6 unit tests for receipt math, 2 E2E for reconcile (zero-receipts + full flow). TS Agent example (examples/agent-client.ts) demonstrates the 402 retry flow with mock signer. README maps deliverables to Phase 1 done signals. Workspace: 86 tests pass (was 52). Phase 1 status: 4/8 done signals met (#1, #2, #3, #6) + Settlement §7 complete."
+}
+{
   "run_id": "2026-08-13T04:39:15Z",
   "pattern": "feature-implement",
   "duration_s": 600,
