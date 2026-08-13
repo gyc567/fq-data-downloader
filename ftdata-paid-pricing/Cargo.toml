@@ -1,0 +1,17 @@
+[package]
+name = "ftdata-paid-pricing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure-function pricing library for ftdata-paid (x402 paid data service). No network, no facilitator, no I/O."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
