@@ -165,5 +165,64 @@ mod tests {
         assert_eq!(uuid_like("foo"), uuid_like("foo"));
         assert_ne!(uuid_like("foo"), uuid_like("bar"));
     }
+
+    #[test]
+    fn new_is_default_and_zero_state() {
+        let m = MockFacilitator::new();
+        // Internal maps should be empty.
+        assert!(m.quotes.lock().unwrap().is_empty());
+        assert!(m.force_error.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn prepare_challenge_registers_quote_and_returns_required() {
+        let m = MockFacilitator::new();
+        let req = m.prepare_challenge("qt_1", "0.050000");
+
+        assert_eq!(req.quote_id, "qt_1");
+        assert_eq!(req.max_amount, "0.050000");
+        assert_eq!(req.pay_to, "0xMOCK_PAY_TO");
+        assert_eq!(req.scheme, Scheme::Exact);
+        assert_eq!(req.network, Network::Base);
+        assert_eq!(req.asset, Asset::Usdc);
+
+        // The challenge should now be retrievable from the internal map.
+        assert_eq!(
+            m.quotes.lock().unwrap().get("qt_1"),
+            Some(&"0.050000".to_string())
+        );
+    }
+
+    #[test]
+    fn force_error_sets_then_clears_on_take() {
+        let m = MockFacilitator::new();
+        m.force_error(VerificationError::BadSignature {
+            reason: "test".to_string(),
+        });
+        assert!(m.force_error.lock().unwrap().is_some());
+        // take() should clear it.
+        let _ = m.force_error.lock().unwrap().take();
+        assert!(m.force_error.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn unix_secs_now_is_monotonic_and_recent() {
+        let a = UnixSecs::now().0;
+        let b = UnixSecs::now().0;
+        // System clock never goes backward in normal operation.
+        assert!(b >= a);
+        // Should be after 2024-01-01 (1704067200) and well before 2100.
+        assert!(a > 1_704_067_200);
+        assert!(a < 4_102_444_800);
+    }
+
+    #[test]
+    fn unix_secs_is_expired_compare_correctly() {
+        let future = UnixSecs::from_secs(u64::MAX);
+        let past = UnixSecs::from_secs(0);
+        assert!(!future.is_expired()); // MAX is in the future
+        assert!(past.is_expired());
+    }
 }
+
 
