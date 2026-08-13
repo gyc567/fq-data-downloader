@@ -60,7 +60,7 @@ ftdata-cli/ ftdata-core/ ftdata-http/ ftdata-sources/ ftdata-storage/ ftdata-ana
 | Q1 | Document extraction plan (above); build + verify `scripts/extract-standalone.sh` | `docs/DECISIONS.md` + `scripts/extract-standalone.sh` | ✅ done (commit pending) — script tested end-to-end at /tmp/fq-data-paid-test; 98 cargo tests + 9 smoke assertions pass in extracted repo; `git push` to GitHub is L3 gate |
 | Q2 | Restrict exchange validation to `binance` only | `ftdata-paid-api/src/routes/quote.rs` | ✅ done (commit 22e95c7) |
 | Q3 | Confirm `Network::Base` default | already default | ✅ done |
-| Q4 | Scaffold `CloudflareFacilitator` behind trait | `ftdata-paid-facilitator/src/cloudflare.rs` | ⏳ pending (Q4) |
+| Q4 | `CloudflareFacilitator` HTTP client + 7 integration tests + server wiring | `ftdata-paid-facilitator/src/cloudflare.rs` + `tests/cloudflare.rs` | ✅ done (commit 7e56c7a) — reqwest-based MGW client; local axum mock for tests; server picks CF when env vars set, else Mock |
 | Q5 | Per-wallet rate limiter + IP fallback | `ftdata-paid-api/src/rate_limit.rs` | ✅ done (commit 36cba08) |
 | Q6 | Web console for `/v1/reconcile` + `/v1/jobs` | `ftdata-paid-api/src/web/` (new) | ⏳ pending (Q6) |
 | Q7 | Cleaning step in origin | `ftdata-paid-api/src/origin.rs` `cleaned` field | ✅ done (commit 8ec57f8) |

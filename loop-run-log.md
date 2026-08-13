@@ -21,6 +21,17 @@ Append one entry per run. Prune entries older than 30 days.
 
 <!-- Loop appends below this line -->
 {
+  "run_id": "2026-08-13T11:15:00Z",
+  "pattern": "decision-execution",
+  "duration_s": 600,
+  "items_found": 1,
+  "actions_taken": 1,
+  "escalations": 0,
+  "tokens_estimate": 12000,
+  "outcome": "fix-proposed",
+  "notes": "Q4 CloudflareFacilitator (commit 7e56c7a). Real reqwest-based HTTP client for Cloudflare MGW wire format. 10 unit tests + 7 integration tests via local axum mock server. Covers happy path + 4 error code mappings (insufficient_amount, expired_quote, bad_signature, unknown) + malformed response + network error. Server binary auto-selects Cloudflare when CLOUDFLARE_MGW_URL + CLOUDFLARE_MGW_API_KEY env vars are set; falls back to MockFacilitator with a WARN log otherwise. Verified: server boots, /v1/info + /v1/quote return correct responses, log shows MockFacilitator fallback (no env). Unblocks Phase 1 signal #7 (Workers edge x402 enforcement). Note: standalone fq-data-paid repo on GitHub does not have Q4 (pushed before this commit); user must re-run scripts/extract-standalone.sh + push to refresh. 33 commits on feat/paid-mvp. 125 tests pass workspace-wide."
+}
+{
   "run_id": "2026-08-13T07:54:30Z",
   "pattern": "decision-execution",
   "duration_s": 600,
