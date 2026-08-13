@@ -57,7 +57,7 @@ ftdata-cli/ ftdata-core/ ftdata-http/ ftdata-sources/ ftdata-storage/ ftdata-ana
 
 | Decision | Action this iteration | Crate / File | Status |
 |---|---|---|---|
-| Q1 | Document extraction plan (above) | `docs/DECISIONS.md` | ✅ documented (move is L3 work) |
+| Q1 | Document extraction plan (above); build + verify `scripts/extract-standalone.sh` | `docs/DECISIONS.md` + `scripts/extract-standalone.sh` | ✅ done (commit pending) — script tested end-to-end at /tmp/fq-data-paid-test; 98 cargo tests + 9 smoke assertions pass in extracted repo; `git push` to GitHub is L3 gate |
 | Q2 | Restrict exchange validation to `binance` only | `ftdata-paid-api/src/routes/quote.rs` | ✅ done (commit 22e95c7) |
 | Q3 | Confirm `Network::Base` default | already default | ✅ done |
 | Q4 | Scaffold `CloudflareFacilitator` behind trait | `ftdata-paid-facilitator/src/cloudflare.rs` | ⏳ pending (Q4) |
