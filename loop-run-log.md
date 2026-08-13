@@ -21,6 +21,17 @@ Append one entry per run. Prune entries older than 30 days.
 
 <!-- Loop appends below this line -->
 {
+  "run_id": "2026-08-13T07:50:10Z",
+  "pattern": "decision-execution",
+  "duration_s": 1500,
+  "items_found": 7,
+  "actions_taken": 7,
+  "escalations": 0,
+  "tokens_estimate": 30000,
+  "outcome": "fix-proposed",
+  "notes": "Q-decision execution iteration. After the user resolved all 11 open questions in DECISIONS.md, implemented 7 of 11: Q2 (Binance-only validation, commit 22e95c7), Q3 (Base default, no change), Q5 (per-wallet rate limiter 10/hr + IP cap 100/hr, commit 36cba08), Q7 (cleaned data flag in OriginRequest + Receipt, commit 8ec57f8), Q8 (ApiKeyStore + Bearer auth, commit 22e95c7), Q10 (customer-facing /v1/reconcile with role-based filter, commit 8ec57f8), Q11 (KV-loaded pricing policy with MemoryKv impl, commit 653095f). Updated DECISIONS.md action matrix to reflect status (commit 0156354). 4 decisions remain pending: Q1 (extraction plan only), Q4 (CF facilitator), Q6 (web console), Q9 (real origin). 114+ tests pass workspace-wide; all green. New modules: auth.rs (208 lines), rate_limit.rs (227 lines), policy.rs (192 lines)."
+}
+{
   "run_id": "2026-08-13T06:45:10Z",
   "pattern": "loop-closeout",
   "duration_s": 600,
