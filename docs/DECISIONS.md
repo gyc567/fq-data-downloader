@@ -57,17 +57,19 @@ ftdata-cli/ ftdata-core/ ftdata-http/ ftdata-sources/ ftdata-storage/ ftdata-ana
 
 | Decision | Action this iteration | Crate / File | Status |
 |---|---|---|---|
-| Q1 | Document extraction plan (above) | `docs/DECISIONS.md` | ✅ documented |
-| Q2 | Restrict exchange validation to `binance` only | `ftdata-paid-api/src/routes/quote.rs` validate() | TODO |
+| Q1 | Document extraction plan (above) | `docs/DECISIONS.md` | ✅ documented (move is L3 work) |
+| Q2 | Restrict exchange validation to `binance` only | `ftdata-paid-api/src/routes/quote.rs` | ✅ done (commit 22e95c7) |
 | Q3 | Confirm `Network::Base` default | already default | ✅ done |
-| Q4 | Scaffold `CloudflareFacilitator` behind trait | `ftdata-paid-facilitator/src/cloudflare.rs` | TODO |
-| Q5 | Per-wallet rate limiter + IP fallback | `ftdata-paid-api/src/rate_limit.rs` (new) | TODO |
-| Q6 | Web console for `/v1/reconcile` + `/v1/jobs` | `ftdata-paid-api/src/web/` (new) | TODO |
-| Q7 | Cleaning step in origin | `ftdata-paid-api/src/origin.rs` add `cleaned` field | TODO |
-| Q8 | `ApiKeyStore` + hybrid auth middleware | `ftdata-paid-api/src/auth.rs` (new) | TODO |
-| Q9 | Direct `ftdata-core` call from origin | `ftdata-paid-api/src/origin.rs` rewrite | TODO |
-| Q10 | Move reconcile from admin-only to customer-facing | `ftdata-paid-api/src/routes/reconcile.rs` add auth | TODO |
-| Q11 | KV-loaded pricing config | `ftdata-paid-api/src/policy.rs` (new) | TODO |
+| Q4 | Scaffold `CloudflareFacilitator` behind trait | `ftdata-paid-facilitator/src/cloudflare.rs` | ⏳ pending (Q4) |
+| Q5 | Per-wallet rate limiter + IP fallback | `ftdata-paid-api/src/rate_limit.rs` | ✅ done (commit 36cba08) |
+| Q6 | Web console for `/v1/reconcile` + `/v1/jobs` | `ftdata-paid-api/src/web/` (new) | ⏳ pending (Q6) |
+| Q7 | Cleaning step in origin | `ftdata-paid-api/src/origin.rs` `cleaned` field | ✅ done (commit 8ec57f8) |
+| Q8 | `ApiKeyStore` + hybrid auth middleware | `ftdata-paid-api/src/auth.rs` | ✅ done (commit 22e95c7) |
+| Q9 | Direct `ftdata-core` call from origin | `ftdata-paid-api/src/origin.rs` rewrite | ⏳ pending (Q9) |
+| Q10 | Move reconcile from admin-only to customer-facing | `ftdata-paid-api/src/routes/reconcile.rs` | ✅ done (commit 8ec57f8) |
+| Q11 | KV-loaded pricing config | `ftdata-paid-api/src/policy.rs` | ✅ done (commit 653095f) |
+
+**7 of 11 decisions implemented in this iteration (Q2, Q3, Q5, Q7, Q8, Q10, Q11).** 4 remain (Q1, Q4, Q6, Q9) — Q1 is plan-only, Q4/Q6/Q9 are infrastructure code.
 
 ## 3. Dependencies Between Decisions
 
