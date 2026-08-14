@@ -6,6 +6,8 @@ pub mod jobs;
 pub mod quote;
 pub mod reconcile;
 
+use crate::web;
+
 use axum::{
     routing::{get, post},
     Router,
@@ -20,5 +22,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/download", post(download::handler))
         .route("/v1/jobs/:id", get(jobs::handler))
         .route("/v1/reconcile", get(reconcile::handler))
+        // web dashboard routes
+        .route("/dashboard/", get(web::dashboard::home))
+        .route("/dashboard/quote", get(web::quote::form))
+        .route("/dashboard/jobs", get(web::jobs::list))
+        .route("/dashboard/jobs/:id", get(web::jobs::detail))
         .with_state(state)
 }

@@ -11,6 +11,7 @@ path = "src/lib.rs"
 [dependencies]
 ftdata-paid-pricing = { path = "../ftdata-paid-pricing" }
 ftdata-paid-facilitator = { path = "../ftdata-paid-facilitator" }
+ftdata-core = { path = "../ftdata-core" }
 
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -28,6 +29,13 @@ dashmap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 rand = "0.8"
+maud = "0.25"
+reqwest = { workspace = true, features = ["stream"] }
+tokio-util = { workspace = true, features = ["io"] }
+zip = { workspace = true }
+flate2 = { workspace = true }
+polars = { workspace = true }
+csv = "1.3"
 
 [[bin]]
 name = "ftdata-paid-server"

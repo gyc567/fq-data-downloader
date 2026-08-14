@@ -34,6 +34,7 @@ pub mod rate_limit;
 pub mod receipt;
 pub mod routes;
 pub mod state;
+pub mod web;
 
 pub use auth::{ApiKeyStore, AuthMethod, CallerIdentity};
 pub use error::ApiError;

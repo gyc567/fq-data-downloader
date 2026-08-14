@@ -14,7 +14,6 @@
 //! For Phase 1 the rate limiter is in-process and per-instance; Phase 2
 //! moves to a shared store (Redis / Cloudflare Durable Object).
 
-use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

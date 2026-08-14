@@ -62,6 +62,11 @@ impl ReceiptStore {
         self.inner.is_empty()
     }
 
+    /// Iterate over all receipts.
+    pub fn iter(&self) -> impl Iterator<Item = Receipt> + '_ {
+        self.inner.iter().map(|r| r.clone())
+    }
+
     /// Return all receipts in `since..=until` (unix seconds, inclusive).
     pub fn range(&self, since: u64, until: u64) -> Vec<Receipt> {
         self.inner

@@ -91,10 +91,11 @@ assert_jq '.service' "ftdata-paid" "/v1/info service" /tmp/info.json
 assert_jq '.endpoints | length >= 5' "true" "/v1/info has >=5 endpoints" /tmp/info.json
 
 # 2. /v1/quote — base case (BTC/USDT 1 month 1m spot)
+# Q9 fix: use 1-day range to speed up real-origin download in smoke test
 blue "[test] /v1/quote (BTC/USDT 1m 1mo spot)"
 status="$(curl -s -o /tmp/quote.json -w '%{http_code}' -X POST "$BASE/v1/quote" \
     -H 'content-type: application/json' \
-    -d '{"exchange":"binance","pairs":["BTC/USDT"],"timeframes":["1m"],"timerange":"20230101-20230201","market":"spot"}')"
+    -d '{"exchange":"binance","pairs":["BTC/USDT"],"timeframes":["1m"],"timerange":"20230101-20230102","market":"spot"}')"
 assert_status "$status" "200" "/v1/quote"
 assert_jq '.price_usdc | startswith("0.01")' "true" "/v1/quote price starts with 0.01" /tmp/quote.json
 QUOTE_ID="$(jq -r '.quote_id' /tmp/quote.json)"
@@ -105,7 +106,7 @@ blue "  quote_id=$QUOTE_ID max_amount=$MAX_AMOUNT"
 blue "[test] /v1/download without payment (expect 402)"
 status="$(curl -s -o /tmp/dl_402.json -w '%{http_code}' -X POST "$BASE/v1/download" \
     -H 'content-type: application/json' \
-    -d '{"exchange":"binance","pairs":["BTC/USDT"],"timeframes":["1m"],"timerange":"20230101-20230201"}')"
+    -d '{"exchange":"binance","pairs":["BTC/USDT"],"timeframes":["1m"],"timerange":"20230101-20230102"}')"
 assert_status "$status" "402" "/v1/download no-payment"
 assert_jq '.error' "payment_required" "/v1/download 402 error code" /tmp/dl_402.json
 CHALLENGE_QUOTE_ID="$(jq -r '.payment_required.quote_id' /tmp/dl_402.json)"
@@ -120,15 +121,16 @@ JSON
 status="$(curl -s -o /tmp/dl_202.json -w '%{http_code}' -X POST "$BASE/v1/download" \
     -H 'content-type: application/json' \
     -H "x-payment: $PROOF" \
-    -d '{"exchange":"binance","pairs":["BTC/USDT"],"timeframes":["1m"],"timerange":"20230101-20230201"}')"
+    -d '{"exchange":"binance","pairs":["BTC/USDT"],"timeframes":["1m"],"timerange":"20230101-20230102"}')"
 assert_status "$status" "202" "/v1/download with-payment"
 assert_jq '.payment_settled' "true" "/v1/download payment_settled" /tmp/dl_202.json
 JOB_ID="$(jq -r '.job_id' /tmp/dl_202.json)"
 blue "  job_id=$JOB_ID"
 
 # 5. /v1/jobs/{id} → 200 (initially may be queued/running)
+# Q9 fix: real network download may take up to 20s, poll longer
 blue "[test] /v1/jobs/$JOB_ID (poll until completed)"
-for i in {1..30}; do
+for i in {1..200}; do
     status="$(curl -s -o /tmp/job.json -w '%{http_code}' "$BASE/v1/jobs/$JOB_ID")"
     if [[ "$(jq -r '.status' /tmp/job.json)" == "completed" ]]; then
         green "  [ok] job completed after ${i} polls"

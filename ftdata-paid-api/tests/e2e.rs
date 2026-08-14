@@ -36,7 +36,8 @@ fn sample_body() -> Value {
         "exchange": "binance",
         "pairs": ["BTC/USDT"],
         "timeframes": ["1m"],
-        "timerange": "20230101-20230201",
+        // Q9 fix: use 1-day range instead of 1-month to speed up real-origin download in tests
+        "timerange": "20230101-20230102",
         "format": "feather",
         "market": "spot"
     })
@@ -130,10 +131,10 @@ async fn download_with_valid_payment_completes_job() {
     assert_eq!(v["payment_settled"], true);
     assert!(m.facilitator_id() == "mock");
 
-    // 4. Poll the job until completion.
+    // 4. Poll the job until completion (Q9: real network download may take longer).
     let mut final_status = String::new();
-    for _ in 0..50 {
-        tokio::time::sleep(Duration::from_millis(50)).await;
+    for _ in 0..200 { // 200 * 100ms = 20s timeout
+        tokio::time::sleep(Duration::from_millis(100)).await;
         let r3 = client
             .get(format!("{base}/v1/jobs/{job_id}"))
             .send()
@@ -339,9 +340,9 @@ async fn completed_download_emits_receipt_aggregated_by_reconcile() {
     assert_eq!(v["payment_settled"], true);
     assert_eq!(m.facilitator_id(), "mock");
 
-    // 4. Poll until completed.
-    for _ in 0..50 {
-        tokio::time::sleep(Duration::from_millis(50)).await;
+    // 4. Poll until completed (Q9: real network download may take longer).
+    for _ in 0..200 { // 200 * 100ms = 20s timeout
+        tokio::time::sleep(Duration::from_millis(100)).await;
         let r3 = client
             .get(format!("{base}/v1/jobs/{job_id}"))
             .send()

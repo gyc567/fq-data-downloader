@@ -78,6 +78,16 @@ impl JobStore {
         f(entry.value_mut());
         Some(entry.value().clone())
     }
+
+    /// Iterate over all jobs (newest first).
+    pub fn iter_rev(&self) -> impl Iterator<Item = Job> + '_ {
+        self.inner.iter().map(|j| j.clone())
+    }
+
+    /// Total job count.
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
 }
 
 pub fn new_job_id() -> String {

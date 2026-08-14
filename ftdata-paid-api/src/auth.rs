@@ -13,7 +13,6 @@
 //! Both paths produce the same `CallerIdentity` which downstream code
 //! (rate limit, reconcile, audit) uses uniformly.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use dashmap::DashMap;

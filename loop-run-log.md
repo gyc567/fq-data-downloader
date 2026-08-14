@@ -21,6 +21,17 @@ Append one entry per run. Prune entries older than 30 days.
 
 <!-- Loop appends below this line -->
 {
+  "run_id": "2026-08-14T00:20:00Z",
+  "pattern": "decision-execution",
+  "duration_s": 600,
+  "items_found": 2,
+  "actions_taken": 2,
+  "escalations": 0,
+  "tokens_estimate": 110000,
+  "outcome": "fix-proposed",
+  "notes": "Q6 + Q9 complete — all 11 Q-decisions now done. Q6 (Web Console): Added web/ module with maud templates, 4 pages (dashboard/, dashboard/quote, dashboard/jobs, dashboard/jobs/:id). Q9 (Real Origin): Replaced stub with real Binance bulk download — fetches from data.binance.vision monthly zip archives, parses zip+gzip CSV, validates OHLCV, supports cleaned=true sort/dedup, writes feather/parquet/json via polars. Fixed unused HashMap imports in auth.rs + rate_limit.rs. Updated STATE.md + DECISIONS.md. Phase 1 now 7/8 done signals. 34 commits on feat/paid-mvp, not pushed. Remaining: R2 upload (#4), CF Workers edge (#7), CF KV (#8) — all need Cloudflare infrastructure."
+}
+{
   "run_id": "2026-08-13T11:15:00Z",
   "pattern": "decision-execution",
   "duration_s": 600,
