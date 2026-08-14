@@ -30,3 +30,11 @@
 
 ---
 <!-- Add your own rules below. Use plain English. The loop reads this verbatim. -->
+
+## spec-kit SDD Constraints
+
+- Every Phase 2 feature MUST follow Constitution → Specify → Plan → Tasks → Implement flow
+- PRs for new features MUST reference spec-kit Constitution principle (e.g., "C2: Edge-first")
+- AI-generated code MUST be annotated with source spec section (e.g., "// ref: PHASE2_SPEC.md §2.2")
+- Implementation without prior spec is BLOCKED — write spec first
+- Spec changes require separate PR from implementation PR
